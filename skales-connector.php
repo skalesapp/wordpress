@@ -3,7 +3,7 @@
  * Plugin Name: Skales Connector
  * Plugin URI: https://skales.app/
  * Description: Connect your WordPress site to Skales Desktop AI Agent. Build pages, manage content, upload media, and automate WooCommerce — all from your desktop.
- * Version: 1.0.0
+ * Version: 1.1.0
  * Author: Mario Simic
  * Author URI: https://mariosimic.at
  * License: MIT
@@ -14,7 +14,7 @@
 
 if (!defined('ABSPATH')) exit;
 
-define('SKALES_VERSION', '1.0.0');
+define('SKALES_VERSION', '1.1.0');
 define('SKALES_PLUGIN_DIR', plugin_dir_path(__FILE__));
 
 // =============================================================================
@@ -343,6 +343,9 @@ function skales_route_create_page($request) {
         return new WP_Error('create_failed', $page_id->get_error_message(), ['status' => 500]);
     }
 
+    // Mark as Skales-created for full-width CSS injection
+    update_post_meta($page_id, '_skales_page', '1');
+
     return rest_ensure_response([
         'ok' => true,
         'page_id' => $page_id,
@@ -409,6 +412,9 @@ function skales_route_create_post($request) {
     if (is_wp_error($post_id)) {
         return new WP_Error('create_failed', $post_id->get_error_message(), ['status' => 500]);
     }
+
+    // Mark as Skales-created for full-width CSS injection
+    update_post_meta($post_id, '_skales_page', '1');
 
     return rest_ensure_response([
         'ok' => true,
@@ -497,6 +503,9 @@ function skales_route_elementor_create_page($request) {
     if (is_wp_error($page_id)) {
         return new WP_Error('create_failed', $page_id->get_error_message(), ['status' => 500]);
     }
+
+    // Mark as Skales-created for full-width CSS injection
+    update_post_meta($page_id, '_skales_page', '1');
 
     $elementor_data = skales_build_elementor_data($params['sections'] ?? []);
 
@@ -744,23 +753,130 @@ function skales_route_clear_cache($request) {
 // 9. FORCE FULL-WIDTH FOR SKALES PAGES
 // =============================================================================
 
+/**
+ * Detect whether the current page/post was created by Skales.
+ * Checks: _skales_page meta OR content containing wp:html / inline <style>.
+ */
+function skales_is_skales_page($post_id = null) {
+    if (!$post_id) $post_id = get_the_ID();
+    if (!$post_id) return false;
+
+    // Explicit meta flag (set by create endpoints)
+    if (get_post_meta($post_id, '_skales_page', true)) return true;
+
+    // Heuristic fallback for pages created before this update
+    $content = get_post_field('post_content', $post_id);
+    return (strpos($content, 'wp:html') !== false || strpos($content, '<style') !== false);
+}
+
+/**
+ * Add 'skales-page' body class so our CSS selectors have the highest specificity.
+ */
+add_filter('body_class', 'skales_body_class');
+function skales_body_class($classes) {
+    if (is_singular() && skales_is_skales_page()) {
+        $classes[] = 'skales-page';
+    }
+    return $classes;
+}
+
+/**
+ * Inject full-width CSS overrides via wp_head.
+ * Uses body.skales-page prefix for maximum specificity without relying
+ * solely on !important. Covers Twenty Twenty-Four, Astra, GeneratePress,
+ * Kadence, OceanWP, Elementor containers, and generic theme wrappers.
+ */
 add_action('wp_head', 'skales_fullwidth_css');
 function skales_fullwidth_css() {
-    if (!is_singular('page')) return;
-    $post_id = get_the_ID();
-    $content = get_post_field('post_content', $post_id);
-    if (strpos($content, 'wp:html') === false && strpos($content, '<style') === false) return;
-    echo '<style>
-        .entry-content, .page-content, .post-content,
-        .ast-container, .site-content .ast-container,
-        .content-area, article .entry-content,
-        .elementor-section.elementor-section-boxed > .elementor-container {
+    if (!is_singular()) return;
+    if (!skales_is_skales_page()) return;
+
+    echo '<style id="skales-fullwidth-overrides">
+        /* ── Reset theme width constraints ─────────────────────────── */
+        body.skales-page .entry-content,
+        body.skales-page .page-content,
+        body.skales-page .post-content,
+        body.skales-page .content-area,
+        body.skales-page article .entry-content,
+        body.skales-page .site-content,
+        body.skales-page .site-main {
             max-width: 100% !important;
-            width: 100vw !important;
-            margin-left: calc(-50vw + 50%) !important;
+            width: 100% !important;
+            padding-left: 0 !important;
+            padding-right: 0 !important;
+            margin-left: auto !important;
+            margin-right: auto !important;
+            box-sizing: border-box !important;
+        }
+
+        /* ── Astra ─────────────────────────────────────────────────── */
+        body.skales-page .ast-container,
+        body.skales-page .site-content .ast-container,
+        body.skales-page .ast-separate-container .ast-article-single {
+            max-width: 100% !important;
             padding-left: 0 !important;
             padding-right: 0 !important;
         }
-        body.page { overflow-x: hidden; }
+
+        /* ── GeneratePress ─────────────────────────────────────────── */
+        body.skales-page .inside-article,
+        body.skales-page .site-content .content-area,
+        body.skales-page .container.grid-container {
+            max-width: 100% !important;
+            width: 100% !important;
+            padding-left: 0 !important;
+            padding-right: 0 !important;
+        }
+
+        /* ── Twenty Twenty-Four / block themes ─────────────────────── */
+        body.skales-page .wp-site-blocks,
+        body.skales-page .wp-block-post-content,
+        body.skales-page .is-layout-constrained > :where(:not(.alignleft):not(.alignright):not(.alignfull)),
+        body.skales-page .wp-block-group.is-layout-constrained {
+            max-width: 100% !important;
+            padding-left: 0 !important;
+            padding-right: 0 !important;
+        }
+
+        /* ── Kadence ───────────────────────────────────────────────── */
+        body.skales-page .content-container.site-container,
+        body.skales-page .entry-content-wrap {
+            max-width: 100% !important;
+            padding-left: 0 !important;
+            padding-right: 0 !important;
+        }
+
+        /* ── OceanWP ───────────────────────────────────────────────── */
+        body.skales-page .content-area .site-main,
+        body.skales-page #content-wrap .container {
+            max-width: 100% !important;
+            width: 100% !important;
+            padding-left: 0 !important;
+            padding-right: 0 !important;
+        }
+
+        /* ── Elementor ─────────────────────────────────────────────── */
+        body.skales-page .elementor-section.elementor-section-boxed > .elementor-container {
+            max-width: 100% !important;
+        }
+
+        /* ── Prevent horizontal scrollbar from full-bleed children ── */
+        body.skales-page {
+            overflow-x: hidden !important;
+        }
     </style>';
+}
+
+/**
+ * Wrap Skales page content in a full-width container with inline styles
+ * as a last-resort override for stubborn theme CSS.
+ */
+add_filter('the_content', 'skales_wrap_content_fullwidth', 999);
+function skales_wrap_content_fullwidth($content) {
+    if (!is_singular() || !is_main_query() || !in_the_loop()) return $content;
+    if (!skales_is_skales_page()) return $content;
+
+    return '<div class="skales-content-wrapper" style="max-width:100%!important;width:100%!important;padding:0!important;margin:0 auto!important;box-sizing:border-box!important;">'
+        . $content
+        . '</div>';
 }

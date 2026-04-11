@@ -4,7 +4,7 @@ Tags: ai, automation, elementor, woocommerce, desktop agent
 Requires at least: 5.6
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 1.0.0
+Stable tag: 1.1.0
 License: MIT
 
 Connect your WordPress site to Skales Desktop AI Agent.
@@ -34,6 +34,9 @@ Features:
 4. Enter the token in Skales Desktop > Settings > WordPress
 
 == Changelog ==
+
+= 1.1.0 =
+* Session 3 WordPress integration improvements
 
 = 1.0.0 =
 * Initial release
