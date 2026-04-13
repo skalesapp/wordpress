@@ -3,7 +3,7 @@
  * Plugin Name: Skales Connector
  * Plugin URI: https://skales.app/
  * Description: Connect your WordPress site to Skales Desktop AI Agent. Build pages, manage content, upload media, and automate WooCommerce — all from your desktop.
- * Version: 1.1.0
+ * Version: 1.2.0
  * Author: Mario Simic
  * Author URI: https://mariosimic.at
  * License: MIT
@@ -14,7 +14,7 @@
 
 if (!defined('ABSPATH')) exit;
 
-define('SKALES_VERSION', '1.1.0');
+define('SKALES_VERSION', '1.2.0');
 define('SKALES_PLUGIN_DIR', plugin_dir_path(__FILE__));
 
 // =============================================================================
@@ -23,12 +23,53 @@ define('SKALES_PLUGIN_DIR', plugin_dir_path(__FILE__));
 
 register_activation_hook(__FILE__, 'skales_activate');
 function skales_activate() {
-    $token = wp_generate_password(48, false);
-    update_option('skales_api_token_hash', hash('sha256', $token));
-    update_option('skales_api_token_display', $token);
-    update_option('skales_connected', false);
+    // ── Deactivate old versions that used a different folder/slug ──
+    // v1.0.0–v1.1.0 shipped as "skales-wordpress/skales-connector.php"
+    // which WordPress treats as a separate plugin from "skales-connector/skales-connector.php".
+    $old_slugs = [
+        'skales-wordpress/skales-connector.php',
+        'skales-wordpress/skales-wordpress.php',
+        'skales-connector-old/skales-connector.php',
+    ];
+    if (!function_exists('is_plugin_active')) {
+        require_once ABSPATH . 'wp-admin/includes/plugin.php';
+    }
+    foreach ($old_slugs as $old_slug) {
+        if (is_plugin_active($old_slug)) {
+            deactivate_plugins($old_slug);
+        }
+    }
+
+    // ── Preserve existing token if upgrading (don't regenerate) ──
+    $existing_hash = get_option('skales_api_token_hash');
+    if (!$existing_hash) {
+        $token = wp_generate_password(48, false);
+        update_option('skales_api_token_hash', hash('sha256', $token));
+        update_option('skales_api_token_display', $token);
+        update_option('skales_connected', false);
+    }
     update_option('skales_plugin_version', SKALES_VERSION);
 }
+
+// ── Runtime check: warn if old plugin copy is still active ──
+add_action('admin_notices', function () {
+    if (!function_exists('is_plugin_active')) {
+        require_once ABSPATH . 'wp-admin/includes/plugin.php';
+    }
+    $old_slugs = [
+        'skales-wordpress/skales-connector.php',
+        'skales-wordpress/skales-wordpress.php',
+    ];
+    foreach ($old_slugs as $old_slug) {
+        if (is_plugin_active($old_slug)) {
+            echo '<div class="notice notice-warning is-dismissible"><p>';
+            echo '<strong>Skales Connector:</strong> An older version of the Skales plugin ';
+            echo '(<code>' . esc_html($old_slug) . '</code>) is still active. ';
+            echo 'Please deactivate and delete it to avoid conflicts.';
+            echo '</p></div>';
+        }
+    }
+});
 
 function skales_authenticate($request) {
     $auth = $request->get_header('Authorization');
@@ -509,14 +550,36 @@ function skales_route_elementor_create_page($request) {
 
     $elementor_data = skales_build_elementor_data($params['sections'] ?? []);
 
+    // Detect installed Elementor version for compatibility
+    $elementor_version = '3.16.0'; // safe fallback
+    if (defined('ELEMENTOR_VERSION')) {
+        $elementor_version = ELEMENTOR_VERSION;
+    }
+
     update_post_meta($page_id, '_elementor_data', wp_slash(json_encode($elementor_data)));
     update_post_meta($page_id, '_elementor_edit_mode', 'builder');
     update_post_meta($page_id, '_elementor_template_type', 'wp-page');
-    update_post_meta($page_id, '_elementor_version', '3.0.0');
+    update_post_meta($page_id, '_elementor_version', $elementor_version);
     update_post_meta($page_id, '_elementor_css', '');
 
+    // Page template MUST be elementor_canvas or elementor_header_footer.
+    // 'default' wraps content in theme containers → blank page.
+    update_post_meta($page_id, '_wp_page_template', 'elementor_canvas');
+
+    // Page settings that Elementor reads when opening the editor
+    update_post_meta($page_id, '_elementor_page_settings', [
+        'hide_title' => 'yes',
+        'template' => 'elementor_canvas',
+    ]);
+
+    // Force Elementor to regenerate CSS for this page
     if (class_exists('\Elementor\Plugin')) {
         \Elementor\Plugin::$instance->files_manager->clear_cache();
+        // Also trigger per-post CSS regeneration
+        $post_css = \Elementor\Core\Files\CSS\Post::create($page_id);
+        if ($post_css) {
+            $post_css->update();
+        }
     }
 
     return rest_ensure_response([
@@ -537,10 +600,16 @@ function skales_route_elementor_update_page($request) {
 
     if (isset($params['sections'])) {
         $elementor_data = skales_build_elementor_data($params['sections']);
+        $elementor_version = defined('ELEMENTOR_VERSION') ? ELEMENTOR_VERSION : '3.16.0';
         update_post_meta($page_id, '_elementor_data', wp_slash(json_encode($elementor_data)));
+        update_post_meta($page_id, '_elementor_version', $elementor_version);
 
         if (class_exists('\Elementor\Plugin')) {
             \Elementor\Plugin::$instance->files_manager->clear_cache();
+            $post_css = \Elementor\Core\Files\CSS\Post::create($page_id);
+            if ($post_css) {
+                $post_css->update();
+            }
         }
     }
 
@@ -552,61 +621,189 @@ function skales_route_elementor_update_page($request) {
 }
 
 function skales_build_elementor_data($sections) {
-    $elementor_sections = [];
+    // ── Flexbox Container format (Elementor 3.6+) ──────────────────────
+    // Modern Elementor uses: container → widget (single col)
+    //                    or: container → container(inner) → widget (multi-col)
+    // The old section → column → widget format does NOT render when
+    // Flexbox Container is set to "Standard" (the default since ~3.16).
+
+    $containers = [];
 
     foreach ($sections as $section) {
-        $section_id = skales_generate_id();
-        $columns = [];
+        $num_columns = max(1, count($section['columns'] ?? []));
 
-        foreach (($section['columns'] ?? []) as $col) {
-            $column_id = skales_generate_id();
-            $widgets = [];
+        // ── Build container settings (the outer wrapper) ──
+        $container_settings = [
+            'content_width' => 'full',
+            'flex_direction' => ($num_columns > 1) ? 'row' : 'column',
+            'flex_wrap' => 'wrap',
+            'flex_gap' => ['size' => 0, 'unit' => 'px', 'column' => '0'],
+        ];
 
+        // Layout mapping: '1' = single, '1-1' = 2-col, '1-1-1' = 3-col etc.
+        if (!empty($section['layout'])) {
+            if ($section['layout'] === 'full_width' || $section['layout'] === 'boxed') {
+                $container_settings['content_width'] = $section['layout'];
+            }
+            // Detect multi-column by dash pattern (e.g., '1-1', '1-1-1')
+            if (strpos($section['layout'], '-') !== false) {
+                $container_settings['flex_direction'] = 'row';
+            }
+        }
+
+        // Background
+        if (!empty($section['background'])) {
+            if (strpos($section['background'], 'gradient') !== false) {
+                $container_settings['background_background'] = 'gradient';
+                $container_settings['background_color'] = '#0f172a';
+                $container_settings['background_color_b'] = '#1e1b4b';
+            } else {
+                $container_settings['background_background'] = 'classic';
+                $container_settings['background_color'] = $section['background'];
+            }
+        }
+
+        // Background image
+        if (!empty($section['background_image'])) {
+            $container_settings['background_background'] = 'classic';
+            $container_settings['background_image'] = [
+                'url' => $section['background_image'],
+                'id' => '',
+            ];
+            $container_settings['background_size'] = 'cover';
+            $container_settings['background_position'] = 'center center';
+        }
+
+        // Padding
+        if (!empty($section['padding'])) {
+            $pad = $section['padding'];
+            if (is_numeric($pad)) {
+                $container_settings['padding'] = [
+                    'top' => strval($pad), 'right' => strval($pad),
+                    'bottom' => strval($pad), 'left' => strval($pad),
+                    'unit' => 'px', 'isLinked' => true,
+                ];
+            } elseif (is_array($pad)) {
+                $container_settings['padding'] = array_merge([
+                    'top' => '0', 'right' => '0', 'bottom' => '0', 'left' => '0',
+                    'unit' => 'px', 'isLinked' => false,
+                ], $pad);
+            }
+        }
+
+        // Merge any extra section-level settings
+        if (!empty($section['settings']) && is_array($section['settings'])) {
+            $container_settings = array_merge($container_settings, $section['settings']);
+        }
+
+        // ── Build child elements ──
+        $children = [];
+
+        if ($num_columns <= 1) {
+            // Single column: widgets go directly inside the container
+            $col = ($section['columns'] ?? [[]])[0] ?? [];
             foreach (($col['widgets'] ?? []) as $widget) {
-                $widget_id = skales_generate_id();
-                $widgets[] = [
-                    'id' => $widget_id,
-                    'elType' => 'widget',
-                    'widgetType' => $widget['type'] ?? 'text-editor',
-                    'settings' => $widget['settings'] ?? [],
-                    'elements' => [],
+                $children[] = skales_build_widget($widget);
+            }
+        } else {
+            // Multi-column: each column becomes an inner container with flex_basis
+            foreach (($section['columns'] ?? []) as $col) {
+                $col_width = intval($col['width'] ?? round(100 / $num_columns));
+                $col_widgets = [];
+
+                foreach (($col['widgets'] ?? []) as $widget) {
+                    $col_widgets[] = skales_build_widget($widget);
+                }
+
+                $inner_settings = [
+                    'content_width' => 'full',
+                    'flex_direction' => 'column',
+                    'flex_basis' => ['size' => $col_width, 'unit' => '%'],
+                    'width' => ['size' => $col_width, 'unit' => '%'],
+                ];
+
+                // Merge extra column-level settings
+                if (!empty($col['settings']) && is_array($col['settings'])) {
+                    $inner_settings = array_merge($inner_settings, $col['settings']);
+                }
+
+                $children[] = [
+                    'id' => skales_generate_id(),
+                    'elType' => 'container',
+                    'isInner' => true,
+                    'settings' => $inner_settings,
+                    'elements' => $col_widgets,
                 ];
             }
-
-            $columns[] = [
-                'id' => $column_id,
-                'elType' => 'column',
-                'settings' => [
-                    '_column_size' => $col['width'] ?? 100,
-                ],
-                'elements' => $widgets,
-            ];
         }
 
-        $section_settings = [];
-        if (!empty($section['background'])) {
-            $section_settings['background_background'] = 'classic';
-            $section_settings['background_color'] = $section['background'];
-        }
-        if (!empty($section['padding'])) {
-            $section_settings['padding'] = [
-                'top' => $section['padding'],
-                'right' => $section['padding'],
-                'bottom' => $section['padding'],
-                'left' => $section['padding'],
-                'unit' => 'px',
-            ];
+        // If no children at all, add a placeholder so the container is visible
+        if (empty($children)) {
+            $children[] = skales_build_widget([
+                'type' => 'text-editor',
+                'settings' => ['editor' => '<p style="text-align:center;color:#64748b;">Empty section — edit in Elementor</p>'],
+            ]);
         }
 
-        $elementor_sections[] = [
-            'id' => $section_id,
-            'elType' => 'section',
-            'settings' => $section_settings,
-            'elements' => $columns,
+        $containers[] = [
+            'id' => skales_generate_id(),
+            'elType' => 'container',
+            'isInner' => false,
+            'settings' => $container_settings,
+            'elements' => $children,
         ];
     }
 
-    return $elementor_sections;
+    return $containers;
+}
+
+/**
+ * Build a single Elementor widget element from a Skales widget descriptor.
+ * Normalises common aliases (content→editor, text→title, url→image).
+ */
+function skales_build_widget($widget) {
+    $widget_type = $widget['type'] ?? 'text-editor';
+    $widget_settings = $widget['settings'] ?? [];
+
+    // Ensure settings is always an associative array, never []
+    if (empty($widget_settings) || $widget_settings === []) {
+        $widget_settings = new \stdClass(); // encodes to {} in JSON
+    }
+
+    // text-editor: map content/text/html → editor
+    if ($widget_type === 'text-editor' && empty($widget_settings['editor'])) {
+        $text = $widget_settings['content'] ?? $widget_settings['text'] ?? $widget_settings['html'] ?? '';
+        if ($text) {
+            $widget_settings['editor'] = $text;
+        }
+    }
+
+    // heading: map text/content → title
+    if ($widget_type === 'heading' && empty($widget_settings['title'])) {
+        $widget_settings['title'] = $widget_settings['text'] ?? $widget_settings['content'] ?? '';
+    }
+
+    // button: map label/content → text
+    if ($widget_type === 'button' && empty($widget_settings['text'])) {
+        $widget_settings['text'] = $widget_settings['label'] ?? $widget_settings['content'] ?? 'Click Here';
+    }
+
+    // image: map url → image structure
+    if ($widget_type === 'image' && !empty($widget_settings['url']) && empty($widget_settings['image'])) {
+        $widget_settings['image'] = [
+            'url' => $widget_settings['url'],
+            'id' => '',
+        ];
+    }
+
+    return [
+        'id' => skales_generate_id(),
+        'elType' => 'widget',
+        'widgetType' => $widget_type,
+        'isInner' => false,
+        'settings' => $widget_settings,
+        'elements' => [],
+    ];
 }
 
 function skales_generate_id() {
@@ -855,8 +1052,11 @@ function skales_fullwidth_css() {
             padding-right: 0 !important;
         }
 
-        /* ── Elementor ─────────────────────────────────────────────── */
+        /* ── Elementor (legacy sections + modern containers) ───────── */
         body.skales-page .elementor-section.elementor-section-boxed > .elementor-container {
+            max-width: 100% !important;
+        }
+        body.skales-page .e-con {
             max-width: 100% !important;
         }
 
