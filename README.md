@@ -2,7 +2,7 @@
 
 Connect your WordPress site to [Skales](https://skales.app) Desktop AI Agent. Manage pages, posts, media, WooCommerce, SEO and more through natural language.
 
-> "Erstelle eine Landing Page für mein Produkt" — and Skales builds it. Full HTML/CSS, responsive, production-ready.
+> "Create a landing page for my product" — and Skales builds it. Full HTML/CSS, responsive, production-ready.
 
 ## What it does
 
@@ -11,7 +11,7 @@ Skales Connector turns your WordPress site into an AI-controllable workspace. In
 | Capability | How it works |
 |---|---|
 | **Pages & Posts** | Create, edit, delete pages and blog posts with full HTML/CSS/JS support |
-| **Elementor** | Build pages with sections, columns, and widgets via JSON structure |
+| **Elementor** | Build pages with Flexbox Container format — sections, widgets, responsive design |
 | **WooCommerce** | List products, bulk-update prices by category, manage inventory |
 | **SEO** | Update RankMath and Yoast meta (title, description, focus keyword) |
 | **Media** | Upload images, videos, PDFs via base64 to your media library |
@@ -20,12 +20,14 @@ Skales Connector turns your WordPress site into an AI-controllable workspace. In
 
 ## Installation
 
-1. Download `skales-connector-1.0.0.zip` from [Releases](https://github.com/skalesapp/wordpress/releases)
+1. Download `skales-connector.zip` from [Releases](https://github.com/skalesapp/wordpress/releases/latest)
 2. WordPress Admin → Plugins → Add New → Upload Plugin → Select the zip
 3. Activate the plugin
 4. Go to the **Skales** menu in your WordPress admin panel
 5. Copy the API token (shown once on activation)
 6. In Skales Desktop → Settings → Integrations → WordPress: paste the token and your site URL
+
+Upgrading? Your existing token is preserved — no need to reconnect.
 
 ## How it works
 
@@ -36,7 +38,7 @@ Skales Connector turns your WordPress site into an AI-controllable workspace. In
 └─────────────────┘         JSON REST API                └──────────────────┘
 ```
 
-Skales Desktop connects to your WordPress site over HTTPS using the REST API. Authentication is via a Bearer token that is generated on activation and stored as a SHA-256 hash in your database. The raw token is shown once and never stored.
+Skales Desktop connects to your WordPress site over HTTPS using the REST API. Authentication is via a Bearer token generated on activation and stored as a SHA-256 hash in your database. The raw token is shown once and never stored.
 
 All communication happens from your desktop to your server. No data leaves your WordPress site to any third party.
 
@@ -64,7 +66,7 @@ All endpoints require `Authorization: Bearer <token>` header.
 
 The connector auto-detects and adapts to:
 
-- **Elementor / Elementor Pro** — Page building with widgets
+- **Elementor / Elementor Pro** — Page building with Flexbox Containers
 - **WooCommerce** — Product and order management
 - **RankMath SEO** — Meta title, description, focus keyword
 - **Yoast SEO** — Meta title, description, focus keyword
@@ -74,7 +76,8 @@ The connector auto-detects and adapts to:
 
 - Token stored as SHA-256 hash (raw token never persisted after activation)
 - All endpoints require valid Bearer token
-- HTML sanitization disabled only for authenticated Skales API calls (`kses_remove_filters`)
+- HTML sanitization disabled only for authenticated Skales API calls
+- Old plugin versions auto-deactivated on upgrade to prevent conflicts
 - No data sent to external services
 - No tracking, no analytics, no telemetry
 
@@ -82,7 +85,7 @@ The connector auto-detects and adapts to:
 
 - WordPress 5.6+
 - PHP 7.4+
-- Skales Desktop v9.2.0+
+- Skales Desktop (latest version recommended)
 
 ## License
 
