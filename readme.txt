@@ -43,9 +43,10 @@ and preserve your existing API token.
 
 = 1.3.0 =
 * Added WP Rocket to /connect capabilities payload (previously only cleared, not reported)
-* Compatibility verified with Skales Desktop v10.0.3
+* Compatibility verified with Skales Desktop v10.0.3 through v10.1.0 "Design"
 * Plugin header: added Tested up to and License URI fields
 * Documentation refresh
+* No connector-side changes required for Skales Desktop v10.1.0 alignment
 
 = 1.2.1 =
 * Minor internal fixes
