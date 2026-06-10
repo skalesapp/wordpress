@@ -2,7 +2,7 @@
 
 Connect your WordPress site to [Skales](https://skales.app) Desktop AI Agent. Manage pages, posts, media, WooCommerce, SEO and more through natural language.
 
-**Plugin v1.3.0** · Compatible with Skales Desktop v10.0.3+ · WordPress 5.6+ · PHP 7.4+
+**Plugin v1.3.0** · Compatible with Skales Desktop v10.0.3 - v11.2.7 · WordPress 5.6+ · PHP 7.4+
 
 > "Create a landing page for my product" — and Skales builds it. Full HTML/CSS, responsive, production-ready.
 
@@ -10,7 +10,7 @@ Connect your WordPress site to [Skales](https://skales.app) Desktop AI Agent. Ma
 
 - WP Rocket now reported in `/connect` capabilities (was previously only cleared if installed, not announced)
 - Plugin header: `Tested up to` and `License URI` fields added for WP.org compliance
-- Compatibility verified with Skales Desktop v10.0.3
+- Compatibility verified with Skales Desktop through v11.2.7
 - readme.txt changelog caught up with code (1.2.1 entry added retroactively)
 
 ## What it does
