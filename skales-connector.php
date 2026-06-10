@@ -3,7 +3,7 @@
  * Plugin Name: Skales Connector
  * Plugin URI: https://skales.app/
  * Description: Connect your WordPress site to Skales Desktop AI Agent. Build pages, manage content, upload media, and automate WooCommerce — all from your desktop.
- * Version: 1.3.0
+ * Version: 1.3.1
  * Author: Mario Simic
  * Author URI: https://mariosimic.at
  * License: MIT
@@ -16,7 +16,7 @@
 
 if (!defined('ABSPATH')) exit;
 
-define('SKALES_VERSION', '1.3.0');
+define('SKALES_VERSION', '1.3.1');
 define('SKALES_PLUGIN_DIR', plugin_dir_path(__FILE__));
 
 // =============================================================================

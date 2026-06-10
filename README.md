@@ -2,7 +2,7 @@
 
 Connect your WordPress site to [Skales](https://skales.app) Desktop AI Agent. Manage pages, posts, media, WooCommerce, SEO and more through natural language.
 
-**Plugin v1.3.0** · Compatible with Skales Desktop v10.0.3 - v11.2.7 · WordPress 5.6+ · PHP 7.4+
+**Plugin v1.3.1** · Compatible with Skales Desktop v10.0.3 - v11.2.7 · WordPress 5.6+ · PHP 7.4+
 
 > "Create a landing page for my product" — and Skales builds it. Full HTML/CSS, responsive, production-ready.
 

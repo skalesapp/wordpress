@@ -4,7 +4,7 @@ Tags: ai, automation, elementor, woocommerce, desktop agent
 Requires at least: 5.6
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 1.3.0
+Stable tag: 1.3.1
 License: MIT
 License URI: https://opensource.org/licenses/MIT
 
@@ -41,9 +41,15 @@ and preserve your existing API token.
 
 == Changelog ==
 
+= 1.3.1 =
+* Rebuilt the distribution zip with proper packaging: plugin folder structure, readme.txt included, no system clutter (plugin metadata now shows correctly after install)
+* Compatibility verified with Skales Desktop through v11.2.7 "Reliance"
+* No functional changes to the plugin code
+
+
 = 1.3.0 =
 * Added WP Rocket to /connect capabilities payload (previously only cleared, not reported)
-* Compatibility verified with Skales Desktop v10.0.3 through v11.2.7
+* Compatibility verified with Skales Desktop v10.0.3 through v10.1.0 "Design"
 * Plugin header: added Tested up to and License URI fields
 * Documentation refresh
 * No connector-side changes required for Skales Desktop v10.1.0 alignment
