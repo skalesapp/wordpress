@@ -107,8 +107,8 @@ surface and writes global styles; on a classic theme it writes theme mods.
 2. The permissions section, where unfiltered HTML can be turned off
 3. Detected plugins and the capabilities each one contributes
 4. Desktop control: a job running in the Skales window on your own computer,
-   the tool step it took visible in the chat, and the published post with its
-   SEO meta open in wp-admin beside it
+   the tool step it took visible in the chat, and the published post beside it
+   in wp-admin with its featured image and its SEO meta set
 5. Mobile control: the Skales app on a phone sending the same job to the paired
    desktop. The phone drives your computer, and your computer drives the site.
 6. Schedules: a recurring job that writes and publishes on its own, here every
