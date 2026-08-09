@@ -1,106 +1,181 @@
 # Skales Connector for WordPress
 
-Connect your WordPress site to [Skales](https://skales.app) Desktop AI Agent. Manage pages, posts, media, WooCommerce, SEO and more through natural language.
+Run your WordPress site from [Skales](https://skales.app). Posts, pages, media,
+menus, widgets, settings, permalinks, comments and design, driven from the
+desktop app on your own machine.
 
-**Plugin v1.3.1** · Works with Skales Desktop v10.0.3 and later (verified through v12.5.6) · WordPress 5.6+ · PHP 7.4+ · Tested up to WordPress 6.8
+**Plugin v2.0.0** · WordPress 5.6+ · Tested up to WordPress 7.0 · PHP 7.4+ ·
+GPLv2 or later
 
-> "Create a landing page for my product" — and Skales builds it. Full HTML/CSS, responsive, production-ready.
+> "Research tomorrow's top news, write an SEO post, and put a fitting image on
+> it" is one chain of calls against this plugin.
 
-## What's New in v1.3.1
+## What it covers
 
-- Plugin header completed for WP.org compliance: `Tested up to` (6.8) and `License URI`
-- WP Rocket is now reported in `/connect` capabilities (previously it was cleared if installed, but never announced)
-- `readme.txt` changelog caught up with the code (retroactive 1.2.1 entry)
-
-## What it does
-
-Skales Connector turns your WordPress site into an AI-controllable workspace. Install the plugin, connect with a token, and manage everything from your desktop.
-
-| Capability | How it works |
+| Area | What the connector can do |
 |---|---|
-| **Pages & Posts** | Create, edit, delete pages and blog posts with full HTML/CSS/JS support |
-| **Elementor** | Build pages with Flexbox Container format — sections, widgets, responsive design |
-| **WooCommerce** | List products, bulk-update prices by category, manage inventory |
-| **SEO** | Update RankMath and Yoast meta (title, description, focus keyword) |
-| **Media** | Upload images, videos, PDFs via base64 to your media library |
-| **Cache** | Clear WP Super Cache, W3 Total Cache, LiteSpeed, WP Rocket with one command |
-| **Plugin Detection** | Auto-detects installed plugins and reports capabilities to Skales |
+| **Posts and pages** | Create, read, update, trash, delete, schedule, set slug, excerpt, parent, template, author, sticky |
+| **Categories and tags** | List, create, rename, reparent, delete, assign by id or by name (missing terms are created) |
+| **Media** | Upload from base64 or a URL, list, edit alt text and captions, delete |
+| **Featured images** | One call from an attachment id, a URL or raw bytes |
+| **Gutenberg** | Serialize a block description into valid block markup, validate existing markup, reusable blocks |
+| **Elementor** | Build and update pages in the Flexbox Container format |
+| **Menus** | Create, fill, nest, order, assign to theme locations, delete |
+| **Widgets** | List sidebars and widget types, add, configure, move, remove |
+| **Customizer** | Theme mods, custom CSS, logo, site icon, title, tagline |
+| **Block themes** | Global styles: colours, typography, layout |
+| **Settings** | General, Writing, Reading and Discussion, through a strict allowlist |
+| **Permalinks** | Structure, category base, tag base, with a rewrite flush |
+| **Comments** | List by status, approve, hold, spam, trash, reply |
+| **SEO** | RankMath and Yoast title, description, focus keyword, canonical |
+| **WooCommerce** | List products, bulk price changes by category |
+| **Plugins and themes** | Read only inventory with update status |
+| **Caches** | WP Super Cache, W3 Total Cache, LiteSpeed, WP Rocket |
 
 ## Installation
 
-1. Download `skales-connector.zip` from [Releases](https://github.com/skalesapp/wordpress/releases/latest)
-2. WordPress Admin → Plugins → Add New → Upload Plugin → Select the zip
-3. Activate the plugin
-4. Go to the **Skales** menu in your WordPress admin panel
-5. Copy the API token (shown once on activation)
-6. In Skales Desktop → Settings → Integrations → WordPress: paste the token and your site URL
+1. Download `skales-connector.zip` from
+   [Releases](https://github.com/skalesapp/wordpress/releases/latest)
+2. WordPress Admin, Plugins, Add New, Upload Plugin, select the zip
+3. Activate
+4. Open the **Skales** menu in wp-admin and copy the API token
+5. In Skales, Settings, Integrations, WordPress: paste the token and the site URL
 
-Upgrading? Your existing token is preserved — no need to reconnect.
+Upgrading keeps your existing token, no reconnection needed.
 
-## How it works
+## How authentication works
 
 ```
-┌─────────────────┐         HTTPS + Bearer Token        ┌──────────────────┐
-│  Skales Desktop  │ ──────────────────────────────────→ │  Your WordPress  │
-│  (your machine)  │ ←────────────────────────────────── │  (any hosting)   │
-└─────────────────┘         JSON REST API                └──────────────────┘
+┌──────────────────┐      HTTPS + Bearer token       ┌──────────────────┐
+│  Skales desktop  │ ──────────────────────────────► │  Your WordPress  │
+│  (your machine)  │ ◄────────────────────────────── │  (your hosting)  │
+└──────────────────┘            JSON REST            └──────────────────┘
 ```
 
-Skales Desktop connects to your WordPress site over HTTPS using the REST API. Authentication is via a Bearer token generated on activation and stored as a SHA-256 hash in your database. The raw token is shown once and never stored.
+One token is generated on activation. Only its SHA-256 hash is stored, and the
+raw value is shown once. The token is linked to a real WordPress account, by
+default the administrator who installed the plugin.
 
-All communication happens from your desktop to your server. No data leaves your WordPress site to any third party.
+Every request is checked twice:
 
-## REST API Endpoints
+1. The Bearer token must match the stored hash (constant time comparison).
+2. The linked account must hold the capability the endpoint needs. Settings,
+   permalinks and design need `manage_options` or `edit_theme_options`; content
+   needs `edit_posts` or `publish_posts`; media needs `upload_files`.
 
-All endpoints require `Authorization: Bearer <token>` header.
+Because the request runs as that account, everything the connector writes gets a
+real author, real revisions and a real entry in the comment log. Pointing the
+connector at an editor account is a supported way to restrict it.
 
-| Method | Endpoint | Description |
+Plugin and theme endpoints are read only on purpose: installing code from a
+remote call would turn a leaked token into remote code execution.
+
+## REST endpoints
+
+All endpoints live under `/wp-json/skales/v1/` and require
+`Authorization: Bearer <token>`.
+
+| Method | Endpoint | Capability |
 |---|---|---|
-| `GET` | `/wp-json/skales/v1/connect` | Test connection, get site capabilities |
-| `GET` | `/wp-json/skales/v1/pages` | List all pages |
-| `POST` | `/wp-json/skales/v1/pages` | Create a page |
-| `PUT` | `/wp-json/skales/v1/pages/{id}` | Update a page |
-| `POST` | `/wp-json/skales/v1/posts` | Create a post |
-| `PUT` | `/wp-json/skales/v1/posts/{id}` | Update a post |
-| `POST` | `/wp-json/skales/v1/media` | Upload media (base64) |
-| `POST` | `/wp-json/skales/v1/elementor/page` | Create Elementor page |
-| `PUT` | `/wp-json/skales/v1/elementor/page/{id}` | Update Elementor page |
-| `GET` | `/wp-json/skales/v1/woo/products` | List WooCommerce products |
-| `PUT` | `/wp-json/skales/v1/woo/products/bulk-price` | Bulk price update |
-| `PUT` | `/wp-json/skales/v1/seo/{id}` | Update SEO meta |
-| `POST` | `/wp-json/skales/v1/cache/clear` | Clear all caches |
+| `GET` | `/connect` | token |
+| `GET` `POST` | `/posts` | `edit_posts` / `publish_posts` |
+| `GET` `PUT` `DELETE` | `/posts/{id}` | `edit_posts` / `delete_posts` |
+| `GET` `POST` | `/pages` | `edit_pages` / `publish_pages` |
+| `GET` `PUT` `DELETE` | `/pages/{id}` | `edit_pages` / `delete_pages` |
+| `GET` | `/types` | `edit_posts` |
+| `GET` `POST` | `/terms` | `edit_posts` / `manage_categories` |
+| `PUT` `DELETE` | `/terms/{id}` | `manage_categories` |
+| `GET` `POST` | `/comments` | `moderate_comments` |
+| `PUT` `DELETE` | `/comments/{id}` | `moderate_comments` |
+| `POST` | `/blocks/serialize` | `edit_posts` |
+| `POST` | `/blocks/validate` | `edit_posts` |
+| `GET` `POST` | `/blocks/reusable` | `edit_posts` / `publish_posts` |
+| `GET` `POST` | `/media` | `upload_files` |
+| `PUT` `DELETE` | `/media/{id}` | `upload_files` |
+| `POST` | `/featured-image` | `upload_files` |
+| `GET` `PUT` | `/settings` | `manage_options` |
+| `GET` `PUT` | `/permalinks` | `manage_options` |
+| `GET` | `/plugins` | `activate_plugins` (read only) |
+| `GET` | `/themes` | `switch_themes` (read only) |
+| `GET` | `/users` | `list_users` (read only) |
+| `GET` | `/theme` | `edit_theme_options` |
+| `GET` `PUT` | `/theme/mods` | `edit_theme_options` |
+| `GET` `PUT` | `/theme/css` | `edit_theme_options` |
+| `GET` `PUT` | `/theme/global-styles` | `edit_theme_options` |
+| `GET` `PUT` | `/site-identity` | `edit_theme_options` |
+| `GET` `POST` | `/menus` | `edit_theme_options` |
+| `PUT` `DELETE` | `/menus/{id}` | `edit_theme_options` |
+| `GET` `POST` | `/widgets` | `edit_theme_options` |
+| `PUT` `DELETE` | `/widgets/{id}` | `edit_theme_options` |
+| `POST` | `/elementor/page` | `publish_pages` |
+| `PUT` | `/elementor/page/{id}` | `edit_pages` |
+| `GET` `PUT` | `/seo/{id}` | `edit_posts` |
+| `GET` | `/woo/products` | `edit_posts` |
+| `PUT` | `/woo/products/bulk-price` | `manage_options` |
+| `POST` | `/cache/clear` | `manage_options` |
 
-## Detected Plugins
+## Abilities API
 
-The connector auto-detects and adapts to:
+On WordPress 6.9 and later the plugin registers its main operations with the
+core Abilities API (`skales/create-post`, `skales/update-post`,
+`skales/list-content`, `skales/set-featured-image`, `skales/update-permalinks`,
+`skales/update-design`). Anything that speaks Abilities, including the WordPress
+MCP adapter, can then discover and use them.
 
-- **Elementor / Elementor Pro** — Page building with Flexbox Containers
-- **WooCommerce** — Product and order management
-- **RankMath SEO** — Meta title, description, focus keyword
-- **Yoast SEO** — Meta title, description, focus keyword
-- **WP Super Cache / W3 Total Cache / LiteSpeed / WP Rocket** — Cache clearing
+Abilities run as the logged-in WordPress user and are checked with normal
+capabilities. They never consult the Skales token, and the token never grants
+access to abilities.
 
-## Security
+## Detected plugins
 
-- Token stored as SHA-256 hash (raw token never persisted after activation)
-- All endpoints require valid Bearer token
-- HTML sanitization disabled only for authenticated Skales API calls
-- Old plugin versions auto-deactivated on upgrade to prevent conflicts
-- No data sent to external services
-- No tracking, no analytics, no telemetry
+The connector adapts to Elementor and Elementor Pro, WooCommerce, RankMath SEO,
+Yoast SEO, WP Super Cache, W3 Total Cache, LiteSpeed Cache, WP Rocket, Contact
+Form 7 and WPForms. Capabilities are only announced for plugins that are
+actually active.
+
+## Privacy
+
+The plugin contacts no external service on its own. It answers requests that
+carry your token, and it fetches a remote file only when you explicitly ask it
+to import an image by URL, through the WordPress safe HTTP API. There is no
+tracking, no analytics and no telemetry.
+
+## Repository layout
+
+```
+skales-connector.php      plugin header, activation, route registration
+includes/auth.php         token check, account binding, capability callbacks
+includes/helpers.php      payload normalisation, terms, block serialisation
+includes/capabilities.php the /connect capability report
+includes/routes-*.php     endpoints by area
+includes/abilities.php    Abilities API registration
+includes/admin.php        the Skales screen in wp-admin
+includes/frontend.php     full width CSS for Skales built pages
+build-zip.sh              builds the distributable zip from the tracked files
+```
+
+## Building a release zip
+
+```bash
+./build-zip.sh
+```
+
+The script copies only the files the plugin needs into `skales-connector/`,
+checks that the version in the header, the constant and `readme.txt` agree, and
+writes `dist/skales-connector.zip`.
 
 ## Requirements
 
-- WordPress 5.6+
-- PHP 7.4+
-- Skales Desktop (latest version recommended)
+- WordPress 5.6 or later
+- PHP 7.4 or later
+- Skales desktop app
 
 ## License
 
-MIT — use it however you want.
+GPLv2 or later. See [LICENSE](LICENSE).
 
 ## Links
 
-- [Skales Desktop](https://skales.app)
+- [Skales](https://skales.app)
 - [Documentation](https://docs.skales.app/#wordpress)
-- [Report Issues](https://github.com/skalesapp/wordpress/issues)
+- [Issues](https://github.com/skalesapp/wordpress/issues)
