@@ -34,6 +34,23 @@ The plugin covers the work a content manager does:
 * WooCommerce: list products, bulk price changes by category
 * Caches: clear WP Super Cache, W3 Total Cache, LiteSpeed and WP Rocket
 
+= You say it in the chat =
+
+There is no second WordPress screen to learn. Once the plugin is installed and
+the site is connected, you work on the site in the same conversation you use for
+everything else:
+
+* "Write a post about our summer opening hours and publish it."
+* "Build me a landing page for the new course in Elementor, three sections, hero with the mountain photo."
+* "Put last week's photos into the media library and use the widest one as the featured image."
+* "Make the site headline font larger and the accent colour the green from our logo."
+* "Add the new course to the main menu, right after Courses."
+* "List my drafts." / "Update the pricing page." / "Clean up the tags."
+* "Approve the comments that are waiting and reply to the one asking about parking."
+
+Reading your site happens without asking. Publishing, updating, deleting and
+anything that touches settings, permalinks or design asks you first.
+
 = How permissions work =
 
 The plugin generates one token on activation and stores only its SHA-256 hash.
