@@ -2,24 +2,9 @@
 
 Connect your WordPress site to [Skales](https://skales.app) Desktop AI Agent. Manage pages, posts, media, WooCommerce, SEO and more through natural language.
 
-**Plugin v1.3.1** · Compatible with Skales Desktop v10.0.3 - v12.8.3 · WordPress 5.6+ · PHP 7.4+
+**Plugin v1.3.1** · Compatible with Skales Desktop v10.0.3 - v11.2.7 · WordPress 5.6+ · PHP 7.4+
 
 > "Create a landing page for my product" — and Skales builds it. Full HTML/CSS, responsive, production-ready.
-
-## You work on your site in the chat
-
-There is no separate WordPress screen to learn. Once the plugin is installed and
-the site is connected, you say what you want in the same chat you use for
-everything else:
-
-- *"Write a post about our summer opening hours and publish it."*
-- *"Put last week's photos into the media library and use one as the featured image."*
-- *"Draft a landing page for the new course. I want to read it before it goes live."*
-- *"List my drafts."* / *"Update the pricing page."* / *"Clean up the tags."*
-
-Skales asks before anything is published, updated or deleted. Reading your site
-(listing posts, pages, media and terms) happens without a prompt; writing does
-not.
 
 ## What's New in v1.3.0
 

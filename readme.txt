@@ -17,15 +17,6 @@ Skales desktop application. Build complete pages, manage WooCommerce
 products, update SEO, upload media, and more — all through natural
 language commands.
 
-You work on your site in the chat. There is no separate WordPress screen
-to learn: once the plugin is installed and the site is connected, you say
-what you want in the same conversation you use for everything else, such
-as "write a post about our summer opening hours and publish it" or "draft
-a landing page for the new course, I want to read it first". Skales asks
-before anything is published, updated or deleted.
-
-Compatible with Skales Desktop v10.0.3 through v12.8.3.
-
 Features:
 * Secure token-based authentication (SHA-256 hashed)
 * Auto-detects installed plugins (Elementor, WooCommerce, RankMath, Yoast)
