@@ -53,6 +53,63 @@ function skales_owner_id() {
 }
 
 /**
+ * The Bearer token that came with this request.
+ *
+ * WP_REST_Request is the first source. Apache in CGI or FastCGI mode drops the
+ * Authorization header unless the site has the matching SetEnvIf rule, and then
+ * hands it on as REDIRECT_HTTP_AUTHORIZATION instead, so the server variables
+ * are read as a fallback. Without that a perfectly valid token looks missing
+ * and every call fails with 401 on hosting the site owner cannot change.
+ *
+ * @param WP_REST_Request|null $request
+ * @return string Empty string when no Bearer token is present.
+ */
+function skales_bearer_token($request = null) {
+    $candidates = [];
+
+    if ($request instanceof WP_REST_Request) {
+        $candidates[] = (string) $request->get_header('Authorization');
+    }
+
+    foreach (['HTTP_AUTHORIZATION', 'REDIRECT_HTTP_AUTHORIZATION'] as $key) {
+        if (!empty($_SERVER[$key])) {
+            $candidates[] = (string) wp_unslash($_SERVER[$key]);
+        }
+    }
+
+    if (function_exists('getallheaders')) {
+        foreach ((array) getallheaders() as $name => $value) {
+            if (strtolower((string) $name) === 'authorization') {
+                $candidates[] = (string) $value;
+            }
+        }
+    }
+
+    foreach ($candidates as $auth) {
+        $auth = trim($auth);
+        if ($auth !== '' && stripos($auth, 'Bearer ') === 0) {
+            return trim(substr($auth, 7));
+        }
+    }
+
+    return '';
+}
+
+/**
+ * Constant time comparison of a presented token against the stored hash.
+ *
+ * @param string $token
+ * @return bool
+ */
+function skales_token_matches($token) {
+    $stored_hash = get_option('skales_api_token_hash');
+    if (!$stored_hash || $token === '') {
+        return false;
+    }
+    return hash_equals($stored_hash, hash('sha256', $token));
+}
+
+/**
  * Validate the Bearer token, bind the request to the owner account, then check
  * an optional capability.
  *
@@ -61,15 +118,12 @@ function skales_owner_id() {
  * @return true|WP_Error
  */
 function skales_gate($request, $capability = null) {
-    $auth = $request->get_header('Authorization');
-    if (!$auth || strpos($auth, 'Bearer ') !== 0) {
+    $token = skales_bearer_token($request);
+    if ($token === '') {
         return new WP_Error('unauthorized', 'Missing or invalid token', ['status' => 401]);
     }
 
-    $token       = substr($auth, 7);
-    $stored_hash = get_option('skales_api_token_hash');
-
-    if (!$stored_hash || !hash_equals($stored_hash, hash('sha256', $token))) {
+    if (!skales_token_matches($token)) {
         return new WP_Error('unauthorized', 'Invalid token', ['status' => 401]);
     }
 
@@ -118,6 +172,70 @@ function skales_cap($capability) {
     return function ($request) use ($capability) {
         return skales_gate($request, $capability);
     };
+}
+
+/**
+ * The REST route the current request addresses, in either of the two forms
+ * WordPress serves: the pretty /wp-json/ path or ?rest_route=.
+ *
+ * @return string
+ */
+function skales_current_rest_route() {
+    if (isset($GLOBALS['wp']->query_vars['rest_route'])) {
+        return (string) $GLOBALS['wp']->query_vars['rest_route'];
+    }
+    if (isset($_GET['rest_route'])) {
+        return sanitize_text_field(wp_unslash($_GET['rest_route']));
+    }
+    if (!empty($_SERVER['REQUEST_URI'])) {
+        // The path only. A query string that happens to mention the namespace
+        // is not a request to it.
+        $uri = sanitize_text_field(wp_unslash($_SERVER['REQUEST_URI']));
+        return (string) strtok($uri, '?');
+    }
+    return '';
+}
+
+/**
+ * Is this request addressed to the connector's own namespace?
+ *
+ * @return bool
+ */
+function skales_is_own_rest_request() {
+    return strpos(skales_current_rest_route(), 'skales/v1') !== false;
+}
+
+/**
+ * Let a valid token through a site wide "REST API for logged in users only"
+ * rule.
+ *
+ * Security plugins and snippets answer rest_authentication_errors with an
+ * error for every visitor without a login cookie. That verdict is reached
+ * before any permission_callback runs, so the connector's token never gets
+ * looked at and the site owner sees an unexplainable failure with a token that
+ * is perfectly good.
+ *
+ * The error is cleared for one case only: a request to skales/v1 that already
+ * carries a token matching the stored hash. Every other route, and every
+ * request without that token, keeps whatever verdict the other rule reached.
+ * Clearing the error is not an authentication either - the route's own
+ * permission_callback still runs skales_gate() afterwards.
+ *
+ * @param WP_Error|true|null $result
+ * @return WP_Error|true|null
+ */
+add_filter('rest_authentication_errors', 'skales_rest_authentication_errors', 999);
+function skales_rest_authentication_errors($result) {
+    if (!is_wp_error($result)) {
+        return $result;
+    }
+    if (!skales_is_own_rest_request()) {
+        return $result;
+    }
+    if (!skales_token_matches(skales_bearer_token())) {
+        return $result;
+    }
+    return true;
 }
 
 /**

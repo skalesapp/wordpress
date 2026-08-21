@@ -53,7 +53,8 @@ function skales_register_media_routes($ns) {
 function skales_blocked_extensions() {
     return ['php', 'phtml', 'phar', 'php3', 'php4', 'php5', 'php7', 'php8',
             'pl', 'py', 'cgi', 'sh', 'exe', 'bat', 'cmd', 'com',
-            'vbs', 'ps1', 'js', 'mjs', 'jsp', 'asp', 'aspx', 'htaccess', 'htm', 'html', 'svgz'];
+            'vbs', 'ps1', 'js', 'mjs', 'jsp', 'asp', 'aspx', 'htaccess', 'htm', 'html',
+            'svg', 'svgz'];
 }
 
 /**
@@ -91,6 +92,22 @@ function skales_allowed_mimes() {
 function skales_store_media_bytes($data, $filename, $alt = '') {
     $filename  = sanitize_file_name($filename ?: 'upload.png');
     $extension = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
+
+    // The same ceiling a browser upload hits. Without it a payload larger than
+    // the site can store is decoded, written to a temp file and only then
+    // refused, or fills the disk on a host that has no other limit.
+    $limit = function_exists('wp_max_upload_size') ? (int) wp_max_upload_size() : 0;
+    $size  = strlen($data);
+    if ($size === 0) {
+        return new WP_Error('empty_file', 'The file has no content', ['status' => 400]);
+    }
+    if ($limit > 0 && $size > $limit) {
+        return new WP_Error(
+            'file_too_large',
+            sprintf('The file is %s and this site accepts at most %s.', size_format($size), size_format($limit)),
+            ['status' => 400]
+        );
+    }
 
     if (in_array($extension, skales_blocked_extensions(), true)) {
         return new WP_Error('invalid_file_type', 'Disallowed file extension: ' . $extension, ['status' => 400]);
@@ -311,9 +328,9 @@ function skales_route_update_media($request) {
     $params = (array) $request->get_json_params();
     $update = ['ID' => $id];
 
-    if (isset($params['title']))       $update['post_title']   = sanitize_text_field($params['title']);
-    if (isset($params['caption']))     $update['post_excerpt'] = wp_kses_post($params['caption']);
-    if (isset($params['description'])) $update['post_content'] = wp_kses_post($params['description']);
+    if (isset($params['title']))       $update['post_title']   = wp_slash(sanitize_text_field($params['title']));
+    if (isset($params['caption']))     $update['post_excerpt'] = wp_slash(wp_kses_post($params['caption']));
+    if (isset($params['description'])) $update['post_content'] = wp_slash(wp_kses_post($params['description']));
 
     if (count($update) > 1) {
         wp_update_post($update);

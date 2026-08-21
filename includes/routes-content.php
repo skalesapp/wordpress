@@ -182,6 +182,10 @@ function skales_route_get_page($request) {
     if (!$post || $post->post_type !== 'page') {
         return new WP_Error('not_found', 'Page not found', ['status' => 404]);
     }
+    $allowed = skales_can_read_object($post);
+    if (is_wp_error($allowed)) {
+        return $allowed;
+    }
     return rest_ensure_response(['ok' => true, 'page' => skales_format_post($post, true)]);
 }
 
@@ -220,10 +224,33 @@ function skales_route_delete_post($request) {
 
 function skales_route_get_post($request) {
     $post = get_post((int) $request['id']);
-    if (!$post) {
+    if (!$post || $post->post_type === 'revision') {
         return new WP_Error('not_found', 'Post not found', ['status' => 404]);
     }
+    $allowed = skales_can_read_object($post);
+    if (is_wp_error($allowed)) {
+        return $allowed;
+    }
     return rest_ensure_response(['ok' => true, 'post' => skales_format_post($post, true)]);
+}
+
+/**
+ * May the linked account see this exact item, with its full content?
+ *
+ * The capability on the route says the account may edit content of that kind.
+ * It does not say it may edit this one: an author sees only their own drafts in
+ * wp-admin, and the connector reading one out by id would be a way around that.
+ * Update and delete have always asked; reading asks now too, with the same
+ * meta capability WordPress uses for the edit screen.
+ *
+ * @param WP_Post $post
+ * @return true|WP_Error
+ */
+function skales_can_read_object($post) {
+    if (current_user_can('edit_post', $post->ID) || current_user_can('read_post', $post->ID)) {
+        return true;
+    }
+    return new WP_Error('forbidden', 'The linked WordPress account is not allowed to read this item.', ['status' => 403]);
 }
 
 function skales_route_list_posts($request) {
@@ -259,6 +286,28 @@ function skales_route_list_types($request) {
 // =============================================================================
 // SHARED CONTENT HANDLERS
 // =============================================================================
+
+/**
+ * Refuse the two ways a caller can address the wrong thing: a page id under
+ * /posts, or a post id under /pages. Custom post types keep passing through
+ * /posts, which is the only route that reaches them.
+ *
+ * @param WP_Post $post
+ * @param string  $post_type The type the route stands for.
+ * @return true|WP_Error
+ */
+function skales_type_matches_route($post, $post_type) {
+    if ($post_type === 'page' && $post->post_type !== 'page') {
+        return new WP_Error('wrong_type', 'That id is a ' . $post->post_type . ', not a page. Use the posts route.', ['status' => 400]);
+    }
+    if ($post_type === 'post' && $post->post_type === 'page') {
+        return new WP_Error('wrong_type', 'That id is a page. Use the pages route.', ['status' => 400]);
+    }
+    if ($post->post_type === 'revision') {
+        return new WP_Error('wrong_type', 'Revisions cannot be edited through the connector.', ['status' => 400]);
+    }
+    return true;
+}
 
 function skales_content_query($request, $post_type) {
     $per_page = (int) ($request->get_param('per_page') ?: 50);
@@ -357,6 +406,10 @@ function skales_update_content($request, $post_type) {
     if (!$post) {
         return new WP_Error('not_found', 'Content not found', ['status' => 404]);
     }
+    $matches = skales_type_matches_route($post, $post_type);
+    if (is_wp_error($matches)) {
+        return $matches;
+    }
     if (!current_user_can('edit_post', $id)) {
         return new WP_Error('forbidden', 'Not allowed to edit this item', ['status' => 403]);
     }
@@ -386,6 +439,10 @@ function skales_delete_content($request, $post_type) {
     $post = get_post($id);
     if (!$post) {
         return new WP_Error('not_found', 'Content not found', ['status' => 404]);
+    }
+    $matches = skales_type_matches_route($post, $post_type);
+    if (is_wp_error($matches)) {
+        return $matches;
     }
     if (!current_user_can('delete_post', $id)) {
         return new WP_Error('forbidden', 'Not allowed to delete this item', ['status' => 403]);
@@ -723,8 +780,10 @@ function skales_route_create_reusable_block($request) {
     $lifted = skales_raw_html_begin();
     $id     = wp_insert_post([
         'post_type'    => 'wp_block',
-        'post_title'   => sanitize_text_field($params['title'] ?? 'Skales Block'),
-        'post_content' => $content,
+        'post_title'   => wp_slash(sanitize_text_field($params['title'] ?? 'Skales Block')),
+        // wp_insert_post() unslashes what it is given, so a payload that is not
+        // slashed here loses every backslash it contains.
+        'post_content' => wp_slash($content),
         'post_status'  => 'publish',
     ], true);
     skales_raw_html_end($lifted);

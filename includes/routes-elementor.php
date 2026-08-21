@@ -31,7 +31,7 @@ function skales_route_elementor_create_page($request) {
 
     $lifted  = skales_raw_html_begin();
     $page_id = wp_insert_post([
-        'post_title'   => sanitize_text_field($params['title'] ?? 'Skales Page'),
+        'post_title'   => wp_slash(sanitize_text_field($params['title'] ?? 'Skales Page')),
         'post_content' => '',
         'post_status'  => skales_sanitize_status($params['status'] ?? 'draft'),
         'post_type'    => 'page',
@@ -101,7 +101,7 @@ function skales_route_elementor_update_page($request) {
     }
 
     if (isset($params['title'])) {
-        wp_update_post(['ID' => $page_id, 'post_title' => sanitize_text_field($params['title'])]);
+        wp_update_post(['ID' => $page_id, 'post_title' => wp_slash(sanitize_text_field($params['title']))]);
     }
     if (isset($params['status'])) {
         wp_update_post(['ID' => $page_id, 'post_status' => skales_sanitize_status($params['status'])]);
@@ -131,6 +131,96 @@ function skales_elementor_regenerate_css($page_id) {
 }
 
 /**
+ * May this request store unfiltered markup in Elementor settings?
+ *
+ * The answer is the same one skales_raw_html_begin() gives for post content:
+ * the linked account's own unfiltered_html capability first, then the switch on
+ * the Skales screen. Elementor keeps the page in post meta rather than in
+ * post_content, so kses never sees it and the decision has to be made here
+ * instead of being left to a filter that does not run.
+ *
+ * @return bool
+ */
+function skales_elementor_allows_raw_html() {
+    if (current_user_can('unfiltered_html')) {
+        return true;
+    }
+    return (bool) get_option('skales_allow_raw_html', 1);
+}
+
+/**
+ * Clean one settings value on its way into _elementor_data.
+ *
+ * Strings are filtered through wp_kses_post unless raw markup is allowed.
+ * Anything that names a target - url, href, link - goes through esc_url_raw in
+ * both cases, because a javascript: target is not markup the site owner asked
+ * for by ticking the raw HTML box. Numbers, booleans and null are left alone:
+ * Elementor stores sizes, flags and units as their own types and turning them
+ * into strings changes how a widget renders.
+ *
+ * @param mixed  $value
+ * @param string $key
+ * @param bool   $allow_raw
+ * @return mixed
+ */
+function skales_sanitize_elementor_value($value, $key, $allow_raw) {
+    if (is_object($value)) {
+        $value = get_object_vars($value);
+    }
+
+    if (is_array($value)) {
+        $clean = [];
+        foreach ($value as $child_key => $child) {
+            $clean[$child_key] = skales_sanitize_elementor_value(
+                $child,
+                is_string($child_key) ? $child_key : $key,
+                $allow_raw
+            );
+        }
+        return $clean;
+    }
+
+    if (!is_string($value)) {
+        return $value;
+    }
+
+    if (in_array($key, ['url', 'href'], true)) {
+        return esc_url_raw($value);
+    }
+
+    return $allow_raw ? $value : wp_kses_post($value);
+}
+
+/**
+ * Clean a whole settings map.
+ *
+ * @param mixed $settings
+ * @param bool  $allow_raw
+ * @return array
+ */
+function skales_sanitize_elementor_settings($settings, $allow_raw) {
+    if (is_object($settings)) {
+        $settings = get_object_vars($settings);
+    }
+    if (!is_array($settings)) {
+        return [];
+    }
+    return skales_sanitize_elementor_value($settings, '', $allow_raw);
+}
+
+/**
+ * A colour or gradient string as Elementor's colour controls accept it. The
+ * value ends up in a generated stylesheet, where a stray brace or angle bracket
+ * would leave the declaration it belongs to.
+ *
+ * @param mixed $value
+ * @return string
+ */
+function skales_sanitize_elementor_color($value) {
+    return trim(preg_replace('/[^A-Za-z0-9#(),.%\s\/_-]/', '', (string) $value));
+}
+
+/**
  * Build Elementor's data structure from Skales section descriptors.
  *
  * Flexbox Container format (Elementor 3.6 and later):
@@ -144,8 +234,15 @@ function skales_elementor_regenerate_css($page_id) {
  */
 function skales_build_elementor_data($sections) {
     $containers = [];
+    $allow_raw  = skales_elementor_allows_raw_html();
 
     foreach ((array) $sections as $section) {
+        if (is_object($section)) {
+            $section = get_object_vars($section);
+        }
+        if (!is_array($section)) {
+            continue;
+        }
         $num_columns = max(1, count($section['columns'] ?? []));
 
         $container_settings = [
@@ -166,19 +263,20 @@ function skales_build_elementor_data($sections) {
         }
 
         if (!empty($section['background'])) {
-            if (strpos($section['background'], 'gradient') !== false) {
+            $background = skales_sanitize_elementor_color($section['background']);
+            if (strpos($background, 'gradient') !== false) {
                 $container_settings['background_background']  = 'gradient';
                 $container_settings['background_color']       = '#0f172a';
                 $container_settings['background_color_b']     = '#1e1b4b';
             } else {
                 $container_settings['background_background'] = 'classic';
-                $container_settings['background_color']      = $section['background'];
+                $container_settings['background_color']      = $background;
             }
         }
 
         if (!empty($section['background_image'])) {
             $container_settings['background_background'] = 'classic';
-            $container_settings['background_image']      = ['url' => $section['background_image'], 'id' => ''];
+            $container_settings['background_image']      = ['url' => esc_url_raw((string) $section['background_image']), 'id' => ''];
             $container_settings['background_size']       = 'cover';
             $container_settings['background_position']   = 'center center';
         }
@@ -199,24 +297,29 @@ function skales_build_elementor_data($sections) {
             }
         }
 
-        if (!empty($section['settings']) && is_array($section['settings'])) {
-            $container_settings = array_merge($container_settings, $section['settings']);
+        if (!empty($section['settings'])) {
+            $container_settings = array_merge(
+                $container_settings,
+                skales_sanitize_elementor_settings($section['settings'], $allow_raw)
+            );
         }
 
         $children = [];
 
         if ($num_columns <= 1) {
             $col = ($section['columns'] ?? [[]])[0] ?? [];
+            $col = is_object($col) ? get_object_vars($col) : (array) $col;
             foreach (($col['widgets'] ?? []) as $widget) {
-                $children[] = skales_build_widget($widget);
+                $children[] = skales_build_widget($widget, $allow_raw);
             }
         } else {
             foreach (($section['columns'] ?? []) as $col) {
+                $col         = is_object($col) ? get_object_vars($col) : (array) $col;
                 $col_width   = intval($col['width'] ?? round(100 / $num_columns));
                 $col_widgets = [];
 
                 foreach (($col['widgets'] ?? []) as $widget) {
-                    $col_widgets[] = skales_build_widget($widget);
+                    $col_widgets[] = skales_build_widget($widget, $allow_raw);
                 }
 
                 $inner_settings = [
@@ -226,8 +329,11 @@ function skales_build_elementor_data($sections) {
                     'width'          => ['size' => $col_width, 'unit' => '%'],
                 ];
 
-                if (!empty($col['settings']) && is_array($col['settings'])) {
-                    $inner_settings = array_merge($inner_settings, $col['settings']);
+                if (!empty($col['settings'])) {
+                    $inner_settings = array_merge(
+                        $inner_settings,
+                        skales_sanitize_elementor_settings($col['settings'], $allow_raw)
+                    );
                 }
 
                 $children[] = [
@@ -244,7 +350,7 @@ function skales_build_elementor_data($sections) {
             $children[] = skales_build_widget([
                 'type'     => 'text-editor',
                 'settings' => ['editor' => '<p style="text-align:center;color:#64748b;">Empty section, edit in Elementor</p>'],
-            ]);
+            ], $allow_raw);
         }
 
         $containers[] = [
@@ -264,16 +370,27 @@ function skales_build_elementor_data($sections) {
  * Normalises the common aliases (content to editor, text to title, url to image).
  *
  * @param array $widget
+ * @param bool  $allow_raw Whether unfiltered markup may be stored.
  * @return array
  */
-function skales_build_widget($widget) {
-    $widget_type     = $widget['type'] ?? 'text-editor';
-    $widget_settings = $widget['settings'] ?? [];
-
-    // Settings must encode as a JSON object, never as an empty array.
-    if (empty($widget_settings) || $widget_settings === []) {
-        $widget_settings = new \stdClass();
+function skales_build_widget($widget, $allow_raw = null) {
+    if (is_object($widget)) {
+        $widget = get_object_vars($widget);
     }
+    if (!is_array($widget)) {
+        $widget = [];
+    }
+    if ($allow_raw === null) {
+        $allow_raw = skales_elementor_allows_raw_html();
+    }
+
+    // The widget type names a registered Elementor widget, nothing else.
+    $widget_type = preg_replace('/[^A-Za-z0-9_-]/', '', (string) ($widget['type'] ?? 'text-editor'));
+    if ($widget_type === '') {
+        $widget_type = 'text-editor';
+    }
+
+    $widget_settings = skales_sanitize_elementor_settings($widget['settings'] ?? [], $allow_raw);
 
     if ($widget_type === 'text-editor' && empty($widget_settings['editor'])) {
         $text = $widget_settings['content'] ?? $widget_settings['text'] ?? $widget_settings['html'] ?? '';
@@ -299,7 +416,8 @@ function skales_build_widget($widget) {
         'elType'     => 'widget',
         'widgetType' => $widget_type,
         'isInner'    => false,
-        'settings'   => $widget_settings,
+        // Settings must encode as a JSON object, never as an empty array.
+        'settings'   => empty($widget_settings) ? new \stdClass() : $widget_settings,
         'elements'   => [],
     ];
 }

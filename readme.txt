@@ -4,7 +4,7 @@ Tags: ai, content management, elementor, woocommerce, automation
 Requires at least: 5.6
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 2.0.0
+Stable tag: 2.1.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -15,6 +15,10 @@ Run your site from the Skales desktop app: posts, pages, media, menus, widgets, 
 Skales Connector opens a REST namespace on your site that the Skales desktop
 application talks to. Skales runs on your own computer, so the connection is
 between your machine and your server, and nothing is sent to anyone else.
+
+Connecting works with any Skales desktop from v10.0.3 on. The full set of
+endpoints listed below needs **Skales Desktop 12.7.2 or newer** (12.8.4 is
+current); older builds connect and work, they simply know fewer of them.
 
 The plugin covers the work a content manager does:
 
@@ -133,6 +137,47 @@ surface and writes global styles; on a classic theme it writes theme mods.
 
 == Changelog ==
 
+= 2.1.0 =
+* Security: Elementor pages built through `/elementor/page` now pass their
+  widget, section and column settings through the same HTML filter as every
+  other write path. They previously went into the page unfiltered, which
+  ignored both the account's `unfiltered_html` capability and the "Allow
+  unfiltered HTML" switch on the Skales screen. Link targets are refused when
+  they are not http, https or a site relative address, whatever the switch says
+* Security: site wide custom CSS now requires `edit_css`, the capability
+  WordPress itself asks for, instead of the weaker `edit_theme_options`
+* Security: global styles are validated through WordPress' own theme.json
+  handling before they are stored, instead of being written raw and cleaned up
+  by whoever reads them
+* Security: reading a single post or page now checks that the linked account
+  may see that particular item, the way updating and deleting already did
+* The generated token is no longer kept in plain text in the options table
+  indefinitely. It is held for one hour so it can be copied once, and the
+  screen says how to get a new one when that hour has passed
+* The handshake answers the version question: `/connect` returns
+  `connector_version`, an `api_level` that names the route set, and the oldest
+  desktop that can drive it. Every response carries the version as a header
+* A valid token is no longer refused by a "REST API for logged in users only"
+  hardening rule. The rule stays in force for every other namespace and for
+  every request without a matching token
+* The Authorization header is also read from the server variables Apache leaves
+  behind in CGI and FastCGI mode, where the header would otherwise disappear
+  and a good token would look missing
+* Fixed: an Elementor heading, button or image widget sent without settings
+  ended the request with a PHP fatal error
+* Fixed: backslashes in page content, excerpts, titles and custom fields were
+  swallowed, which broke CSS escapes and regular expressions in generated pages
+* Fixed: `/pages/{id}` accepted a post id and `/posts/{id}` accepted a page id
+* Widget update and delete now verify that the widget type in the URL is
+  registered, the way creating one already did
+* `default_role` can no longer be set to a role that administers the site
+* Uploads are refused before anything is written when they exceed what the site
+  accepts, and `svg` joins `svgz` on the blocked extension list
+* `custom_css_post_id` is refused as a theme mod; the CSS has its own endpoint
+* The permalink structure is validated by one rule for the REST route and the
+  ability, instead of two that had drifted apart
+* Compatibility verified with Skales Desktop 12.7.2 through 12.8.4
+
 = 2.0.0 =
 * Content manager release. The connector now covers menus, widgets, the
   Customizer, global styles for block themes, site settings, the permalink
@@ -192,6 +237,12 @@ surface and writes global styles; on a classic theme it writes theme mods.
 * Initial release
 
 == Upgrade Notice ==
+
+= 2.1.0 =
+Security release. Elementor pages built through the connector were stored
+without HTML filtering, which bypassed the unfiltered HTML setting; custom CSS
+and global styles are now gated and validated the way WordPress gates them.
+Recommended for every site that has Elementor installed. Your token is kept.
 
 = 2.0.0 =
 Media upload was returning a fatal error in every 1.x version and is fixed here.

@@ -43,7 +43,12 @@ function skales_register_design_routes($ns) {
         [
             'methods'             => 'PUT, PATCH, POST',
             'callback'            => 'skales_route_update_custom_css',
-            'permission_callback' => skales_cap('edit_theme_options'),
+            // Site wide CSS is gated at edit_css in wp-admin, which resolves to
+            // unfiltered_html. edit_theme_options is the weaker right that opens
+            // the Customizer, and wp_update_custom_css_post() checks nothing on
+            // its own, so asking for it here would let an account write CSS it
+            // could not write in the Customizer.
+            'permission_callback' => skales_cap('edit_css'),
         ],
     ]);
 
@@ -210,6 +215,14 @@ function skales_route_update_theme_mods($request) {
             continue;
         }
 
+        // custom_css_post_id decides which post wp_get_custom_css() reads, so
+        // writing it as a plain mod would point the site's stylesheet at
+        // arbitrary content. The CSS itself has its own route.
+        if ($key === 'custom_css_post_id') {
+            $refused[$key] = 'use PUT /theme/css instead';
+            continue;
+        }
+
         if (is_scalar($value)) {
             set_theme_mod($key, sanitize_text_field((string) $value));
             $updated[$key] = $value;
@@ -322,12 +335,7 @@ function skales_route_update_global_styles($request) {
         }
     }
 
-    $current['isGlobalStylesUserThemeJSON'] = true;
-    if (empty($current['version'])) {
-        $current['version'] = class_exists('WP_Theme_JSON') && defined('WP_Theme_JSON::LATEST_SCHEMA')
-            ? WP_Theme_JSON::LATEST_SCHEMA
-            : 2;
-    }
+    $current = skales_validate_global_styles($current);
 
     $encoded = wp_json_encode($current);
     if ($encoded === false) {
@@ -345,6 +353,53 @@ function skales_route_update_global_styles($request) {
     }
 
     return rest_ensure_response(['ok' => true, 'id' => $id, 'styles' => $current]);
+}
+
+/**
+ * Put a global styles payload through the theme.json machinery before it is
+ * stored.
+ *
+ * Until now the merged JSON went to the database exactly as it arrived, and the
+ * only thing standing between it and the front end was that
+ * WP_Theme_JSON_Resolver strips insecure properties when it reads. Relying on
+ * the reader means anything that reads the post differently gets the raw
+ * payload. WP_Theme_JSON's own sanitiser drops keys and block names that do not
+ * exist, and where the account may not write CSS the insecure properties (the
+ * `css` escape hatch among them) are removed here rather than later.
+ *
+ * @param array $config
+ * @return array
+ */
+function skales_validate_global_styles($config) {
+    $config['isGlobalStylesUserThemeJSON'] = true;
+    if (empty($config['version'])) {
+        $config['version'] = class_exists('WP_Theme_JSON') && defined('WP_Theme_JSON::LATEST_SCHEMA')
+            ? WP_Theme_JSON::LATEST_SCHEMA
+            : 2;
+    }
+
+    if (!class_exists('WP_Theme_JSON')) {
+        return $config;
+    }
+
+    if (!current_user_can('edit_css') && method_exists('WP_Theme_JSON', 'remove_insecure_properties')) {
+        // The second argument was added later; a version that does not take it
+        // simply ignores it.
+        $filtered = WP_Theme_JSON::remove_insecure_properties($config, 'custom');
+        if (is_array($filtered)) {
+            $config = $filtered;
+        }
+    }
+
+    $theme_json = new WP_Theme_JSON($config, 'custom');
+    $sanitized  = $theme_json->get_raw_data();
+    if (is_array($sanitized) && !empty($sanitized)) {
+        $config = $sanitized;
+    }
+
+    $config['isGlobalStylesUserThemeJSON'] = true;
+
+    return $config;
 }
 
 /**
@@ -789,6 +844,13 @@ function skales_route_update_widget($request) {
     }
     list($base, $index) = $parts;
 
+    // The option row is derived from the id in the URL, so the base has to name
+    // a registered widget before it is used to address one - the same check the
+    // create path already makes.
+    if (skales_widget_class_for_base($base) === '') {
+        return new WP_Error('bad_widget', 'Unknown widget id_base: ' . $base, ['status' => 400]);
+    }
+
     $params    = (array) $request->get_json_params();
     $instances = get_option('widget_' . $base, []);
     if (!is_array($instances) || !isset($instances[$index])) {
@@ -840,6 +902,10 @@ function skales_route_delete_widget($request) {
         return new WP_Error('bad_widget', 'Malformed widget id', ['status' => 400]);
     }
     list($base, $index) = $parts;
+
+    if (skales_widget_class_for_base($base) === '') {
+        return new WP_Error('bad_widget', 'Unknown widget id_base: ' . $base, ['status' => 400]);
+    }
 
     $instances = get_option('widget_' . $base, []);
     if (is_array($instances) && isset($instances[$index])) {

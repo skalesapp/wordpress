@@ -4,8 +4,12 @@ Run your WordPress site from [Skales](https://skales.app). Posts, pages, media,
 menus, widgets, settings, permalinks, comments and design, driven from the
 desktop app on your own machine.
 
-**Plugin v2.0.0** · WordPress 5.6+ · Tested up to WordPress 7.0 · PHP 7.4+ ·
-GPLv2 or later
+**Plugin v2.1.0** · Skales Desktop 12.7.2 or newer · WordPress 5.6+ · Tested up
+to WordPress 7.0 · PHP 7.4+ · GPLv2 or later
+
+Connecting works with any Skales desktop from v10.0.3 on. The endpoint table
+below is covered in full from **Skales Desktop 12.7.2 "Cockpit"** (12.8.4 is
+current); older builds connect and work, they simply know fewer endpoints.
 
 > "Research tomorrow's top news, write an SEO post, and put a fitting image on
 > it" is one chain of calls against this plugin.
@@ -87,6 +91,33 @@ connector at an editor account is a supported way to restrict it.
 Plugin and theme endpoints are read only on purpose: installing code from a
 remote call would turn a leaked token into remote code execution.
 
+## Telling the two halves apart
+
+`GET /connect` answers with the plugin version, the route set it implements and
+the oldest desktop that can drive it:
+
+```json
+{
+  "ok": true,
+  "version": "2.1.0",
+  "connector_version": "2.1.0",
+  "api_level": 2,
+  "requires_desktop": "12.7.2",
+  "client": { "version": null, "minimum": "12.7.2", "outdated": null }
+}
+```
+
+`api_level` is the number to gate on: it names the endpoints, not the release.
+A 1.x plugin sends neither key, so a missing `api_level` means level 1 — posts,
+pages, media, Elementor, SEO and WooCommerce, and none of the menus, widgets,
+settings, permalinks, terms, comments, blocks or design routes. Every response
+from the namespace also carries `X-Skales-Connector-Version` and
+`X-Skales-Api-Level`.
+
+A client that names itself, with a `client_version` parameter or an
+`X-Skales-Client-Version` header, gets a verdict on itself in `client`;
+without one, `outdated` stays `null`, because unknown is not outdated.
+
 ## REST endpoints
 
 All endpoints live under `/wp-json/skales/v1/` and require
@@ -117,7 +148,7 @@ All endpoints live under `/wp-json/skales/v1/` and require
 | `GET` | `/users` | `list_users` (read only) |
 | `GET` | `/theme` | `edit_theme_options` |
 | `GET` `PUT` | `/theme/mods` | `edit_theme_options` |
-| `GET` `PUT` | `/theme/css` | `edit_theme_options` |
+| `GET` `PUT` | `/theme/css` | `edit_theme_options` / `edit_css` |
 | `GET` `PUT` | `/theme/global-styles` | `edit_theme_options` |
 | `GET` `PUT` | `/site-identity` | `edit_theme_options` |
 | `GET` `POST` | `/menus` | `edit_theme_options` |
@@ -185,7 +216,7 @@ writes `dist/skales-connector.zip`.
 
 - WordPress 5.6 or later
 - PHP 7.4 or later
-- Skales desktop app
+- Skales desktop app, v12.7.2 or newer for the full endpoint set
 
 ## License
 

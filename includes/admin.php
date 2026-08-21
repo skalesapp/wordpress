@@ -37,6 +37,7 @@ function skales_admin_handle_post() {
         check_admin_referer('skales_admin');
         $new_token = wp_generate_password(48, false);
         update_option('skales_api_token_hash', hash('sha256', $new_token));
+        skales_forget_token_display();
         update_option('skales_connected', false);
         $result['token']  = $new_token;
         $result['notice'] = __('A new token was generated. The old one stopped working immediately.', 'skales-connector');
@@ -66,7 +67,7 @@ function skales_admin_page() {
     }
 
     $posted        = skales_admin_handle_post();
-    $token_display = get_option('skales_api_token_display', '');
+    $token_display = skales_token_for_display();
     $is_connected  = get_option('skales_connected', false);
     $capabilities  = skales_detect_plugins();
     $owner_id      = skales_owner_id();
@@ -87,8 +88,12 @@ function skales_admin_page() {
         echo '<br><em>' . esc_html__('This token is shown once. Copy it now.', 'skales-connector') . '</em>';
         echo '</p></div>';
         if ($token_display) {
-            delete_option('skales_api_token_display');
+            skales_forget_token_display();
         }
+    } else {
+        echo '<div class="notice notice-info"><p>';
+        echo esc_html__('The token is shown once, right after it is generated. If you no longer have it, press "Regenerate token" below and paste the new one into Skales.', 'skales-connector');
+        echo '</p></div>';
     }
 
     echo '<h2>' . esc_html__('Connection', 'skales-connector') . '</h2>';

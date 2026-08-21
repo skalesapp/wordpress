@@ -106,21 +106,25 @@ function skales_meta_key_allowed($key) {
 function skales_build_post_args($params, $post_type, $is_update = false) {
     $args = [];
 
+    // wp_insert_post() and wp_update_post() expect slashed data and unslash it
+    // themselves. Everything that carries free text is slashed on the way in,
+    // otherwise a CSS escape, a JavaScript regex or a Windows path in a
+    // generated page arrives with its backslashes eaten.
     if (isset($params['title'])) {
-        $args['post_title'] = sanitize_text_field($params['title']);
+        $args['post_title'] = wp_slash(sanitize_text_field($params['title']));
     } elseif (!$is_update) {
         $args['post_title'] = 'Untitled';
     }
 
     if (isset($params['content'])) {
-        $args['post_content'] = $params['content'];
+        $args['post_content'] = wp_slash((string) $params['content']);
     } elseif (!$is_update) {
         $args['post_content'] = '';
     }
 
     // Gutenberg block descriptors win over raw content when both are supplied.
     if (!empty($params['blocks']) && is_array($params['blocks'])) {
-        $args['post_content'] = skales_serialize_block_list($params['blocks']);
+        $args['post_content'] = wp_slash(skales_serialize_block_list($params['blocks']));
     }
 
     if (isset($params['status'])) {
@@ -133,11 +137,11 @@ function skales_build_post_args($params, $post_type, $is_update = false) {
         $args['post_type'] = $post_type;
     }
 
-    if (isset($params['excerpt']))     $args['post_excerpt']   = wp_kses_post($params['excerpt']);
+    if (isset($params['excerpt']))     $args['post_excerpt']   = wp_slash(wp_kses_post($params['excerpt']));
     if (isset($params['slug']))        $args['post_name']      = sanitize_title($params['slug']);
     if (isset($params['parent']))      $args['post_parent']    = (int) $params['parent'];
     if (isset($params['menu_order']))  $args['menu_order']     = (int) $params['menu_order'];
-    if (isset($params['password']))    $args['post_password']  = (string) $params['password'];
+    if (isset($params['password']))    $args['post_password']  = wp_slash((string) $params['password']);
 
     if (isset($params['comment_status'])) {
         $args['comment_status'] = $params['comment_status'] === 'open' ? 'open' : 'closed';
@@ -217,7 +221,9 @@ function skales_apply_post_extras($post_id, $params) {
         foreach ($params['meta'] as $key => $value) {
             $key = (string) $key;
             if (!skales_meta_key_allowed($key)) continue;
-            update_post_meta($post_id, $key, is_scalar($value) ? sanitize_text_field((string) $value) : $value);
+            // update_post_meta() unslashes too, so the value is slashed here for
+            // the same reason post_content is.
+            update_post_meta($post_id, $key, wp_slash(is_scalar($value) ? sanitize_text_field((string) $value) : $value));
         }
     }
 }

@@ -132,8 +132,21 @@ function skales_sanitize_setting($value, $type) {
             $tz = (string) $value;
             return in_array($tz, timezone_identifiers_list(), true) ? $tz : null;
         case 'role':
-            $role = sanitize_key((string) $value);
-            return get_role($role) ? $role : null;
+            $role   = sanitize_key((string) $value);
+            $object = get_role($role);
+            if (!$object) {
+                return null;
+            }
+            // default_role decides what every future self registration becomes.
+            // A role that can administer the site does not belong there, and a
+            // setting survives a token rotation, so this is the one place where
+            // a leaked token could leave something behind.
+            foreach (['manage_options', 'promote_users', 'edit_users', 'activate_plugins', 'edit_files'] as $forbidden) {
+                if (!empty($object->capabilities[$forbidden])) {
+                    return null;
+                }
+            }
+            return $role;
         case 'attachment':
             $id = (int) $value;
             return ($id === 0 || get_post_type($id) === 'attachment') ? $id : null;
@@ -260,27 +273,12 @@ function skales_route_update_permalinks($request) {
     if (isset($params['structure'])) {
         $structure = (string) $params['structure'];
 
-        if ($structure !== '') {
-            // Only the characters a permalink structure can legally contain.
-            if (!preg_match('#^/?[A-Za-z0-9%/_\-\.]*$#', $structure)) {
-                return new WP_Error('bad_structure', 'The permalink structure contains characters WordPress does not allow', ['status' => 400]);
-            }
-            if (strpos($structure, '..') !== false) {
-                return new WP_Error('bad_structure', 'The permalink structure may not contain ".."', ['status' => 400]);
-            }
-            // A structure with no unique tag makes every post resolve to the
-            // same URL. WordPress warns about this in wp-admin; we refuse it.
-            $unique = ['%postname%', '%post_id%', '%pagename%'];
-            $has_unique = false;
-            foreach ($unique as $tag) {
-                if (strpos($structure, $tag) !== false) { $has_unique = true; break; }
-            }
-            if (!$has_unique) {
-                return new WP_Error('bad_structure', 'The structure needs %postname% or %post_id% so URLs stay unique', ['status' => 400]);
-            }
-            if (strpos($structure, '/') !== 0) {
-                $structure = '/' . $structure;
-            }
+        $valid = skales_validate_permalink_structure($structure);
+        if (is_wp_error($valid)) {
+            return $valid;
+        }
+        if ($structure !== '' && strpos($structure, '/') !== 0) {
+            $structure = '/' . $structure;
         }
 
         $wp_rewrite->set_permalink_structure($structure);
@@ -309,6 +307,41 @@ function skales_route_update_permalinks($request) {
         'structure' => get_option('permalink_structure'),
         'sample'    => skales_sample_permalink(),
     ]);
+}
+
+/**
+ * The one rule for what a permalink structure may look like.
+ *
+ * Both the REST route and the ability write this setting, and two copies of a
+ * rule are two rules: the ability's copy had already lost the ".." refusal and
+ * the uniqueness requirement.
+ *
+ * @param string $structure Empty string means plain permalinks.
+ * @return true|WP_Error
+ */
+function skales_validate_permalink_structure($structure) {
+    $structure = (string) $structure;
+    if ($structure === '') {
+        return true;
+    }
+
+    // Only the characters a permalink structure can legally contain.
+    if (!preg_match('#^/?[A-Za-z0-9%/_\-\.]*$#', $structure)) {
+        return new WP_Error('bad_structure', 'The permalink structure contains characters WordPress does not allow', ['status' => 400]);
+    }
+    if (strpos($structure, '..') !== false) {
+        return new WP_Error('bad_structure', 'The permalink structure may not contain ".."', ['status' => 400]);
+    }
+
+    // A structure with no unique tag makes every post resolve to the same URL.
+    // WordPress warns about this in wp-admin; we refuse it.
+    foreach (['%postname%', '%post_id%', '%pagename%'] as $tag) {
+        if (strpos($structure, $tag) !== false) {
+            return true;
+        }
+    }
+
+    return new WP_Error('bad_structure', 'The structure needs %postname% or %post_id% so URLs stay unique', ['status' => 400]);
 }
 
 /**

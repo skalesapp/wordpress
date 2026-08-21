@@ -3,7 +3,7 @@
  * Plugin Name: Skales Connector
  * Plugin URI: https://skales.app/
  * Description: Connect your WordPress site to the Skales desktop app. Manage posts, pages, media, menus, widgets, settings, permalinks, comments and design from your own machine. No third-party service involved.
- * Version: 2.0.0
+ * Version: 2.1.0
  * Author: Mario Simic
  * Author URI: https://mariosimic.at
  * License: GPLv2 or later
@@ -16,9 +16,28 @@
 
 if (!defined('ABSPATH')) exit;
 
-define('SKALES_VERSION', '2.0.0');
+define('SKALES_VERSION', '2.1.0');
 define('SKALES_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('SKALES_PLUGIN_FILE', __FILE__);
+
+// The route set, as one number that only ever grows. A version string tells a
+// client which release it is talking to; this tells it which endpoints exist,
+// which is the question a client actually has. 1 is every 1.x plugin (posts,
+// pages, media, Elementor, SEO, WooCommerce), 2 is the content manager set
+// added in 2.0.0 (menus, widgets, settings, permalinks, terms, comments,
+// blocks, design, featured image). A 1.x plugin sends neither key, and a
+// missing api_level therefore means "1".
+define('SKALES_API_LEVEL', 2);
+
+// The oldest Skales desktop that can drive the current route set. Older builds
+// connect and work, they simply know fewer endpoints.
+define('SKALES_MIN_DESKTOP', '12.7.2');
+
+// How long the freshly generated token stays readable in the database. It is
+// meant to be copied once, right after activation; keeping it in plain text
+// beyond that gains nobody anything and every other plugin on the site can
+// read the options table.
+define('SKALES_TOKEN_DISPLAY_TTL', HOUR_IN_SECONDS);
 
 require_once SKALES_PLUGIN_DIR . 'includes/auth.php';
 require_once SKALES_PLUGIN_DIR . 'includes/helpers.php';
@@ -62,7 +81,7 @@ function skales_activate() {
     if (!$existing_hash) {
         $token = wp_generate_password(48, false);
         update_option('skales_api_token_hash', hash('sha256', $token));
-        update_option('skales_api_token_display', $token);
+        skales_hold_token_for_display($token);
         update_option('skales_connected', false);
     }
 
@@ -80,6 +99,61 @@ function skales_activate() {
     // Permalink endpoints add no rewrite rules of their own, but a fresh
     // activation should leave the rule cache consistent.
     flush_rewrite_rules(false);
+}
+
+/**
+ * Park a freshly generated token where the admin screen can show it once.
+ *
+ * A transient, not an option: the value expires on its own, so a site whose
+ * owner never opens the Skales screen does not keep a working token in plain
+ * text in wp_options for the rest of its life.
+ *
+ * @param string $token
+ * @return void
+ */
+function skales_hold_token_for_display($token) {
+    set_transient('skales_api_token_display', $token, SKALES_TOKEN_DISPLAY_TTL);
+}
+
+/**
+ * The token waiting to be shown once, if there is one.
+ *
+ * @return string
+ */
+function skales_token_for_display() {
+    $token = get_transient('skales_api_token_display');
+    return is_string($token) ? $token : '';
+}
+
+/**
+ * @return void
+ */
+function skales_forget_token_display() {
+    delete_transient('skales_api_token_display');
+    delete_option('skales_api_token_display');
+}
+
+// An update that arrives through the WordPress updater never fires the
+// activation hook, so the version bookkeeping and any data migration happen on
+// the first admin request after the new files are in place.
+add_action('admin_init', 'skales_maybe_upgrade');
+function skales_maybe_upgrade() {
+    $stored = (string) get_option('skales_plugin_version', '');
+    if ($stored === SKALES_VERSION) {
+        return;
+    }
+
+    // Up to 2.0.0 the token was parked in an autoloaded option and only removed
+    // when someone opened the admin screen. Move whatever is still there into
+    // the expiring transient, so it can still be copied once and disappears on
+    // its own afterwards.
+    $legacy = get_option('skales_api_token_display', '');
+    if (is_string($legacy) && $legacy !== '') {
+        skales_hold_token_for_display($legacy);
+    }
+    delete_option('skales_api_token_display');
+
+    update_option('skales_plugin_version', SKALES_VERSION);
 }
 
 register_deactivation_hook(__FILE__, 'skales_deactivate');
@@ -147,11 +221,74 @@ function skales_register_routes() {
 function skales_route_connect($request) {
     update_option('skales_connected', true);
     $caps = skales_detect_plugins();
+
     return rest_ensure_response([
-        'ok'           => true,
-        'version'      => SKALES_VERSION,
+        'ok'      => true,
+        'version' => SKALES_VERSION, // 1.x key, unchanged
+
+        // The handshake answers the two version questions in one place, so a
+        // client does not have to dig through the capability report or guess
+        // from a failing call which half of the pair is behind.
+        'connector_version' => SKALES_VERSION,
+        'api_level'         => SKALES_API_LEVEL,
+        'requires_desktop'  => SKALES_MIN_DESKTOP,
+        'client'            => skales_client_report($request),
+
         'capabilities' => $caps,
     ]);
+}
+
+/**
+ * What the plugin can tell about the Skales build on the other end.
+ *
+ * The desktop may name itself with a `client_version` parameter or an
+ * X-Skales-Client-Version header. When it does, an outdated counterpart is
+ * named as such instead of quietly missing a third of the endpoints; when it
+ * does not, the answer is "unknown", never "outdated".
+ *
+ * @param WP_REST_Request $request
+ * @return array
+ */
+function skales_client_report($request) {
+    $version = '';
+    if ($request instanceof WP_REST_Request) {
+        $version = (string) ($request->get_param('client_version') ?: $request->get_header('X-Skales-Client-Version'));
+    }
+    $version = trim(sanitize_text_field($version));
+
+    $report = [
+        'version'  => $version !== '' ? $version : null,
+        'minimum'  => SKALES_MIN_DESKTOP,
+        'outdated' => null,
+    ];
+
+    if ($version === '' || !preg_match('/^\d+(\.\d+)*/', $version)) {
+        return $report;
+    }
+
+    $report['outdated'] = version_compare($version, SKALES_MIN_DESKTOP, '<');
+    if ($report['outdated']) {
+        $report['notice'] = sprintf(
+            'This Skales build is older than %s and cannot drive every endpoint the connector offers.',
+            SKALES_MIN_DESKTOP
+        );
+    }
+
+    return $report;
+}
+
+// Every answer from this namespace carries the plugin version, so a client can
+// tell an outdated connector from a missing one without a second request. A
+// site running 1.x sends no such header, and the absence is the answer.
+add_filter('rest_post_dispatch', 'skales_rest_version_header', 10, 3);
+function skales_rest_version_header($response, $server, $request) {
+    if ($request instanceof WP_REST_Request
+        && strpos((string) $request->get_route(), '/skales/v1') === 0
+        && $response instanceof WP_REST_Response) {
+        $response->header('X-Skales-Connector-Version', SKALES_VERSION);
+        $response->header('X-Skales-Api-Level', (string) SKALES_API_LEVEL);
+    }
+    return $response;
 }
 
 // =============================================================================

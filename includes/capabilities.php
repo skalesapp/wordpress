@@ -77,6 +77,9 @@ function skales_detect_plugins() {
         // Everything below is new in 2.0.0. Older Skales builds ignore unknown
         // keys, so the payload stays backward compatible.
         'connector_version' => SKALES_VERSION,
+        'api_level'         => SKALES_API_LEVEL,
+        'requires_desktop'  => SKALES_MIN_DESKTOP,
+        'allow_raw_html'    => (bool) get_option('skales_allow_raw_html', 1),
         'is_block_theme'    => function_exists('wp_is_block_theme') ? wp_is_block_theme() : false,
         'is_multisite'      => is_multisite(),
         'linked_user'       => $owner_user ? [
@@ -86,14 +89,26 @@ function skales_detect_plugins() {
             'roles' => array_values($owner_user->roles),
             // What the connector may actually do on this site. Skales can use
             // this to stop offering work the account would be refused.
+            // One entry per capability an endpoint of this plugin asks for.
+            // A capability that is missing here cannot be checked before the
+            // call, so the caller learns of the refusal as a bare 403 from a
+            // route it had already decided to use.
             'can'   => [
                 'edit_posts'         => user_can($owner_user, 'edit_posts'),
                 'publish_posts'      => user_can($owner_user, 'publish_posts'),
+                'delete_posts'       => user_can($owner_user, 'delete_posts'),
+                'edit_pages'         => user_can($owner_user, 'edit_pages'),
                 'publish_pages'      => user_can($owner_user, 'publish_pages'),
+                'delete_pages'       => user_can($owner_user, 'delete_pages'),
                 'upload_files'       => user_can($owner_user, 'upload_files'),
                 'manage_categories'  => user_can($owner_user, 'manage_categories'),
                 'moderate_comments'  => user_can($owner_user, 'moderate_comments'),
                 'edit_theme_options' => user_can($owner_user, 'edit_theme_options'),
+                'edit_css'           => user_can($owner_user, 'edit_css'),
+                'unfiltered_html'    => user_can($owner_user, 'unfiltered_html'),
+                'activate_plugins'   => user_can($owner_user, 'activate_plugins'),
+                'switch_themes'      => user_can($owner_user, 'switch_themes'),
+                'list_users'         => user_can($owner_user, 'list_users'),
                 'manage_options'     => user_can($owner_user, 'manage_options'),
             ],
         ] : null,

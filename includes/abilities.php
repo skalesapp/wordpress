@@ -55,6 +55,18 @@ function skales_register_abilities() {
                 'categories' => ['type' => 'array', 'items' => ['type' => 'string']],
                 'tags'       => ['type' => 'array', 'items' => ['type' => 'string']],
                 'date'       => ['type' => 'string', 'description' => 'ISO 8601 date, a future date schedules the post'],
+                // The fields skales_apply_post_extras() acts on. They were
+                // always processed; leaving them out of the schema meant a
+                // caller reading the schema could not know they exist.
+                'slug'           => ['type' => 'string'],
+                'parent'         => ['type' => 'integer'],
+                'template'       => ['type' => 'string'],
+                'featured_media' => ['type' => 'integer'],
+                'sticky'         => ['type' => 'boolean'],
+                'comment_status' => ['type' => 'string', 'enum' => ['open', 'closed']],
+                'terms'          => ['type' => 'object', 'description' => 'Taxonomy slug to a list of term ids, slugs or names'],
+                'meta'           => ['type' => 'object', 'description' => 'Custom fields, protected keys excluded'],
+                'blocks'         => ['type' => 'array', 'items' => ['type' => 'object'], 'description' => 'Block descriptors, serialised instead of content when present'],
             ],
             'required' => ['title'],
         ],
@@ -90,6 +102,15 @@ function skales_register_abilities() {
                 'excerpt'    => ['type' => 'string'],
                 'categories' => ['type' => 'array', 'items' => ['type' => 'string']],
                 'tags'       => ['type' => 'array', 'items' => ['type' => 'string']],
+                'slug'           => ['type' => 'string'],
+                'parent'         => ['type' => 'integer'],
+                'template'       => ['type' => 'string'],
+                'featured_media' => ['type' => 'integer'],
+                'sticky'         => ['type' => 'boolean'],
+                'comment_status' => ['type' => 'string', 'enum' => ['open', 'closed']],
+                'terms'          => ['type' => 'object', 'description' => 'Taxonomy slug to a list of term ids, slugs or names'],
+                'meta'           => ['type' => 'object', 'description' => 'Custom fields, protected keys excluded'],
+                'blocks'         => ['type' => 'array', 'items' => ['type' => 'object'], 'description' => 'Block descriptors, serialised instead of content when present'],
             ],
             'required' => ['id'],
         ],
@@ -306,8 +327,12 @@ function skales_ability_update_permalinks($input = []) {
         return new WP_Error('no_structure', __('Provide preset or structure.', 'skales-connector'));
     }
 
-    if ($structure !== '' && !preg_match('#^/?[A-Za-z0-9%/_\-\.]*$#', $structure)) {
-        return new WP_Error('bad_structure', __('That permalink structure is not valid.', 'skales-connector'));
+    $valid = skales_validate_permalink_structure($structure);
+    if (is_wp_error($valid)) {
+        return $valid;
+    }
+    if ($structure !== '' && strpos($structure, '/') !== 0) {
+        $structure = '/' . $structure;
     }
 
     $wp_rewrite->set_permalink_structure($structure);
@@ -337,6 +362,10 @@ function skales_ability_update_design($input = []) {
     }
 
     if (!empty($input['css'])) {
+        // Same gate as PUT /theme/css: site wide CSS is edit_css in wp-admin.
+        if (!current_user_can('edit_css')) {
+            return new WP_Error('forbidden', __('This account may not write site wide CSS.', 'skales-connector'));
+        }
         $result = wp_update_custom_css_post((string) $input['css']);
         if (is_wp_error($result)) return $result;
         $applied['css'] = strlen((string) $input['css']);
@@ -353,7 +382,16 @@ function skales_ability_update_design($input = []) {
         $current['styles'] = isset($current['styles']) && is_array($current['styles'])
             ? skales_deep_merge($current['styles'], $input['styles'])
             : $input['styles'];
-        wp_update_post(['ID' => $id, 'post_content' => wp_slash(wp_json_encode($current))]);
+
+        $current = skales_validate_global_styles($current);
+        $encoded = wp_json_encode($current);
+        if ($encoded === false) {
+            return new WP_Error('encode_failed', __('Could not encode the global styles payload.', 'skales-connector'));
+        }
+
+        $result = wp_update_post(['ID' => $id, 'post_content' => wp_slash($encoded)], true);
+        if (is_wp_error($result)) return $result;
+
         if (function_exists('wp_clean_theme_json_cache')) wp_clean_theme_json_cache();
         $applied['styles'] = true;
     }
