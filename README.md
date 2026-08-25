@@ -227,3 +227,4 @@ GPLv2 or later. See [LICENSE](LICENSE).
 - [Skales](https://skales.app)
 - [Documentation](https://docs.skales.app/#wordpress)
 - [Issues](https://github.com/skalesapp/wordpress/issues)
+- [Skales Plugins](https://github.com/skalesapp/plugins) — community plugin registry
