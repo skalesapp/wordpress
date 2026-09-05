@@ -8,10 +8,16 @@
  * implementation.
  *
  * The REST namespace in this plugin stays the primary wire for Skales itself.
- * It works from WordPress 5.6, it carries the token that identifies the desktop
+ * It works from WordPress 5.6, it carries the token that identifies the Skales
  * app, and it does not depend on a core feature the site may not have yet.
  * Abilities are the shared vocabulary on top, so the same site is usable by
  * whatever else the owner points at it.
+ *
+ * Exposure is declared twice on purpose: `public` is the flag WordPress 7.1
+ * introduced as the one switch for every channel a client may use, and
+ * `show_in_rest` is what 6.9 and 7.0 read. On 7.1 an explicit `show_in_rest`
+ * takes precedence, and both say the same thing here, so neither version
+ * sees a different ability.
  *
  * Abilities run as the logged in user and are checked with normal capabilities.
  * They do not consult the Skales token at all.
@@ -84,6 +90,7 @@ function skales_register_abilities() {
         },
         'meta' => [
             'annotations'  => ['readonly' => false, 'destructive' => false, 'idempotent' => false],
+            'public'       => true,
             'show_in_rest' => true,
         ],
     ]);
@@ -125,6 +132,7 @@ function skales_register_abilities() {
         },
         'meta' => [
             'annotations'  => ['readonly' => false, 'destructive' => true, 'idempotent' => true],
+            'public'       => true,
             'show_in_rest' => true,
         ],
     ]);
@@ -146,6 +154,7 @@ function skales_register_abilities() {
         'permission_callback' => static function () { return current_user_can('edit_posts'); },
         'meta' => [
             'annotations'  => ['readonly' => true, 'destructive' => false, 'idempotent' => true],
+            'public'       => true,
             'show_in_rest' => true,
         ],
     ]);
@@ -175,6 +184,7 @@ function skales_register_abilities() {
         },
         'meta' => [
             'annotations'  => ['readonly' => false, 'destructive' => true, 'idempotent' => true],
+            'public'       => true,
             'show_in_rest' => true,
         ],
     ]);
@@ -195,6 +205,7 @@ function skales_register_abilities() {
         'permission_callback' => static function () { return current_user_can('manage_options'); },
         'meta' => [
             'annotations'  => ['readonly' => false, 'destructive' => true, 'idempotent' => true],
+            'public'       => true,
             'show_in_rest' => true,
         ],
     ]);
@@ -216,6 +227,7 @@ function skales_register_abilities() {
         'permission_callback' => static function () { return current_user_can('edit_theme_options'); },
         'meta' => [
             'annotations'  => ['readonly' => false, 'destructive' => true, 'idempotent' => true],
+            'public'       => true,
             'show_in_rest' => true,
         ],
     ]);

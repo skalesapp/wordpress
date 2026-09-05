@@ -2,23 +2,25 @@
 Contributors: skalesapp
 Tags: ai, content management, elementor, woocommerce, automation
 Requires at least: 5.6
-Tested up to: 7.0
+Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 2.1.0
+Stable tag: 2.2.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
-Run your site from the Skales desktop app: posts, pages, media, menus, widgets, settings, permalinks, comments and design. No third-party service.
+Run your site from Skales on your computer or your phone: posts, pages, media, menus, widgets, settings, permalinks, comments and design. No third-party service.
 
 == Description ==
 
-Skales Connector opens a REST namespace on your site that the Skales desktop
-application talks to. Skales runs on your own computer, so the connection is
-between your machine and your server, and nothing is sent to anyone else.
+Skales Connector opens a REST namespace on your site that Skales talks to, from
+the desktop app on your computer or from the app on your phone. Skales runs on
+your own device, so the connection is between that device and your server, and
+nothing is sent to anyone else.
 
-Connecting works with any Skales desktop from v10.0.3 on. The full set of
-endpoints listed below needs **Skales Desktop 12.7.2 or newer** (12.8.4 is
-current); older builds connect and work, they simply know fewer of them.
+Connecting works with any Skales desktop from v10.0.3 on and with Skales on a
+phone from 2.6.0 on. The full set of endpoints listed below needs **Skales
+Desktop 12.7.2 or newer** or **Skales Mobile 2.7.3 or newer**; older builds
+connect and work, they simply know fewer of them.
 
 The plugin covers the work a content manager does:
 
@@ -130,12 +132,30 @@ surface and writes global styles; on a classic theme it writes theme mods.
 4. Desktop control: a job running in the Skales window on your own computer,
    the tool step it took visible in the chat, and the published post beside it
    in wp-admin with its featured image and its SEO meta set
-5. Mobile control: the Skales app on a phone sending the same job to the paired
-   desktop. The phone drives your computer, and your computer drives the site.
+5. Mobile control: the Skales app on a phone running the same job against the
+   site directly. The site address and the token live on the phone, and no
+   computer has to be running anywhere.
 6. Schedules: a recurring job that writes and publishes on its own, here every
    morning at seven
 
 == Changelog ==
+
+= 2.2.0 =
+* The handshake judges the phone as well as the computer. Skales on a phone
+  names itself with a platform prefix (`mobile-2.9.26`), and the connector
+  answered "unknown" to that because it only knew how to read a desktop
+  number. Each platform is now compared against its own minimum, `/connect`
+  reports `requires_mobile` next to `requires_desktop`, and `client` names the
+  platform it judged. A client that names no platform is still read as the
+  desktop, so nothing changes for existing installations
+* Abilities carry the `public` flag WordPress 7.1 introduced, so one
+  registration is exposed on every channel a client may use. `show_in_rest`
+  stays in place for 6.9 and 7.0
+* Tested up to WordPress 7.1
+* The description says what has been true since Skales Mobile 2.6.0: the phone
+  talks to the site itself, with no paired computer in between
+* Route set checked against Skales Desktop 12.9.26 and Skales Mobile 2.9.26:
+  every call either side makes has its endpoint here, nothing new is needed
 
 = 2.1.0 =
 * Security: Elementor pages built through `/elementor/page` now pass their
@@ -237,6 +257,11 @@ surface and writes global styles; on a classic theme it writes theme mods.
 * Initial release
 
 == Upgrade Notice ==
+
+= 2.2.0 =
+Maintenance release. The handshake now recognises Skales on a phone, abilities
+carry the WordPress 7.1 public flag, tested up to 7.1. No change to any route,
+your token is kept.
 
 = 2.1.0 =
 Security release. Elementor pages built through the connector were stored

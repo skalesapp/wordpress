@@ -9,7 +9,7 @@ if (!defined('ABSPATH')) exit;
 
 /**
  * Describe one detected plugin. Capabilities are only reported when the plugin
- * is actually active, otherwise the desktop side plans work the site cannot do.
+ * is actually active, otherwise the Skales side plans work the site cannot do.
  *
  * @param string   $name
  * @param string   $slug
@@ -79,6 +79,7 @@ function skales_detect_plugins() {
         'connector_version' => SKALES_VERSION,
         'api_level'         => SKALES_API_LEVEL,
         'requires_desktop'  => SKALES_MIN_DESKTOP,
+        'requires_mobile'   => SKALES_MIN_MOBILE,
         'allow_raw_html'    => (bool) get_option('skales_allow_raw_html', 1),
         'is_block_theme'    => function_exists('wp_is_block_theme') ? wp_is_block_theme() : false,
         'is_multisite'      => is_multisite(),

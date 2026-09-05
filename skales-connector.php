@@ -2,21 +2,21 @@
 /**
  * Plugin Name: Skales Connector
  * Plugin URI: https://skales.app/
- * Description: Connect your WordPress site to the Skales desktop app. Manage posts, pages, media, menus, widgets, settings, permalinks, comments and design from your own machine. No third-party service involved.
- * Version: 2.1.0
+ * Description: Connect your WordPress site to Skales on your computer or your phone. Manage posts, pages, media, menus, widgets, settings, permalinks, comments and design from your own device. No third-party service involved.
+ * Version: 2.2.0
  * Author: Mario Simic
  * Author URI: https://mariosimic.at
  * License: GPLv2 or later
  * License URI: https://www.gnu.org/licenses/gpl-2.0.html
  * Text Domain: skales-connector
  * Requires at least: 5.6
- * Tested up to: 7.0
+ * Tested up to: 7.1
  * Requires PHP: 7.4
  */
 
 if (!defined('ABSPATH')) exit;
 
-define('SKALES_VERSION', '2.1.0');
+define('SKALES_VERSION', '2.2.0');
 define('SKALES_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('SKALES_PLUGIN_FILE', __FILE__);
 
@@ -29,9 +29,12 @@ define('SKALES_PLUGIN_FILE', __FILE__);
 // missing api_level therefore means "1".
 define('SKALES_API_LEVEL', 2);
 
-// The oldest Skales desktop that can drive the current route set. Older builds
-// connect and work, they simply know fewer endpoints.
+// The oldest Skales build on each platform that can drive the current route
+// set. Older builds connect and work, they simply know fewer endpoints. The
+// two count differently (the desktop is at 12.x while the phone is at 2.x), so
+// each platform is judged against its own number, never against the other's.
 define('SKALES_MIN_DESKTOP', '12.7.2');
+define('SKALES_MIN_MOBILE', '2.7.3');
 
 // How long the freshly generated token stays readable in the database. It is
 // meant to be copied once, right after activation; keeping it in plain text
@@ -232,6 +235,7 @@ function skales_route_connect($request) {
         'connector_version' => SKALES_VERSION,
         'api_level'         => SKALES_API_LEVEL,
         'requires_desktop'  => SKALES_MIN_DESKTOP,
+        'requires_mobile'   => SKALES_MIN_MOBILE,
         'client'            => skales_client_report($request),
 
         'capabilities' => $caps,
@@ -239,38 +243,80 @@ function skales_route_connect($request) {
 }
 
 /**
+ * The oldest build per platform, keyed the way clients name themselves.
+ *
+ * @return array<string,string>
+ */
+function skales_client_minimums() {
+    return [
+        'desktop' => SKALES_MIN_DESKTOP,
+        'mobile'  => SKALES_MIN_MOBILE,
+    ];
+}
+
+/**
  * What the plugin can tell about the Skales build on the other end.
  *
- * The desktop may name itself with a `client_version` parameter or an
- * X-Skales-Client-Version header. When it does, an outdated counterpart is
- * named as such instead of quietly missing a third of the endpoints; when it
- * does not, the answer is "unknown", never "outdated".
+ * A client names itself with a `client_version` parameter or an
+ * X-Skales-Client-Version header. The desktop sends a bare number (`12.9.26`);
+ * the phone sends its number behind a platform prefix (`mobile-2.9.26`),
+ * because the two count differently and a bare `2.9.26` would compare below
+ * every desktop minimum. A `client_platform` parameter or an
+ * X-Skales-Client-Platform header may also name the platform outright.
+ *
+ * Each platform is judged against its own minimum. A client that does not name
+ * itself, or names a platform this plugin does not know, gets "unknown", never
+ * "outdated": an outdated counterpart is named as such instead of quietly
+ * missing a third of the endpoints, but nothing is ever refused on this basis.
  *
  * @param WP_REST_Request $request
  * @return array
  */
 function skales_client_report($request) {
-    $version = '';
+    $version  = '';
+    $platform = '';
     if ($request instanceof WP_REST_Request) {
-        $version = (string) ($request->get_param('client_version') ?: $request->get_header('X-Skales-Client-Version'));
+        $version  = (string) ($request->get_param('client_version') ?: $request->get_header('X-Skales-Client-Version'));
+        $platform = (string) ($request->get_param('client_platform') ?: $request->get_header('X-Skales-Client-Platform'));
     }
-    $version = trim(sanitize_text_field($version));
+    $version  = trim(sanitize_text_field($version));
+    $platform = sanitize_key($platform);
+
+    // `mobile-2.9.26`: the platform rides in front of the number.
+    if (preg_match('/^([a-z]+)-(\d.*)$/i', $version, $m)) {
+        if ($platform === '') {
+            $platform = strtolower($m[1]);
+        }
+        $version = $m[2];
+    }
+    // A bare number has always meant the desktop.
+    if ($platform === '' && $version !== '') {
+        $platform = 'desktop';
+    }
+
+    $minimums = skales_client_minimums();
+    $minimum  = isset($minimums[$platform]) ? $minimums[$platform] : null;
 
     $report = [
+        'platform' => $platform !== '' ? $platform : null,
         'version'  => $version !== '' ? $version : null,
-        'minimum'  => SKALES_MIN_DESKTOP,
+        // An anonymous client is answered the way every release before 2.2.0
+        // answered it; a named platform gets its own number, or none.
+        'minimum'  => $platform === '' ? SKALES_MIN_DESKTOP : $minimum,
         'outdated' => null,
     ];
 
-    if ($version === '' || !preg_match('/^\d+(\.\d+)*/', $version)) {
+    if ($version === '' || !$minimum || !preg_match('/^(\d+(?:\.\d+)*)/', $version, $v)) {
         return $report;
     }
 
-    $report['outdated'] = version_compare($version, SKALES_MIN_DESKTOP, '<');
+    $report['outdated'] = version_compare($v[1], $minimum, '<');
     if ($report['outdated']) {
         $report['notice'] = sprintf(
-            'This Skales build is older than %s and cannot drive every endpoint the connector offers.',
-            SKALES_MIN_DESKTOP
+            'This Skales %1$s build (%2$s) is older than %3$s and cannot drive every endpoint the connector offers.',
+            $platform,
+            $v[1],
+            $minimum
         );
     }
 

@@ -2,14 +2,15 @@
 
 Run your WordPress site from [Skales](https://skales.app). Posts, pages, media,
 menus, widgets, settings, permalinks, comments and design, driven from the
-desktop app on your own machine.
+desktop app on your own computer or from the app on your phone.
 
-**Plugin v2.1.0** · Skales Desktop 12.7.2 or newer · WordPress 5.6+ · Tested up
-to WordPress 7.0 · PHP 7.4+ · GPLv2 or later
+**Plugin v2.2.0** · Skales Desktop 12.7.2 or newer · Skales Mobile 2.7.3 or
+newer · WordPress 5.6+ · Tested up to WordPress 7.1 · PHP 7.4+ · GPLv2 or later
 
-Connecting works with any Skales desktop from v10.0.3 on. The endpoint table
-below is covered in full from **Skales Desktop 12.7.2 "Cockpit"** (12.8.4 is
-current); older builds connect and work, they simply know fewer endpoints.
+Connecting works with any Skales desktop from v10.0.3 on and with Skales on a
+phone from 2.6.0 on. The endpoint table below is covered in full from **Skales
+Desktop 12.7.2 "Cockpit"** and **Skales Mobile 2.7.3 "Drop-In"**; older builds
+connect and work, they simply know fewer endpoints.
 
 > "Research tomorrow's top news, write an SEO post, and put a fitting image on
 > it" is one chain of calls against this plugin.
@@ -68,8 +69,8 @@ Upgrading keeps your existing token, no reconnection needed.
 
 ```
 ┌──────────────────┐      HTTPS + Bearer token       ┌──────────────────┐
-│  Skales desktop  │ ──────────────────────────────► │  Your WordPress  │
-│  (your machine)  │ ◄────────────────────────────── │  (your hosting)  │
+│  Skales (desktop │ ──────────────────────────────► │  Your WordPress  │
+│  or phone)       │ ◄────────────────────────────── │  (your hosting)  │
 └──────────────────┘            JSON REST            └──────────────────┘
 ```
 
@@ -94,16 +95,17 @@ remote call would turn a leaked token into remote code execution.
 ## Telling the two halves apart
 
 `GET /connect` answers with the plugin version, the route set it implements and
-the oldest desktop that can drive it:
+the oldest build on each platform that can drive it:
 
 ```json
 {
   "ok": true,
-  "version": "2.1.0",
-  "connector_version": "2.1.0",
+  "version": "2.2.0",
+  "connector_version": "2.2.0",
   "api_level": 2,
   "requires_desktop": "12.7.2",
-  "client": { "version": null, "minimum": "12.7.2", "outdated": null }
+  "requires_mobile": "2.7.3",
+  "client": { "platform": null, "version": null, "minimum": "12.7.2", "outdated": null }
 }
 ```
 
@@ -116,7 +118,11 @@ from the namespace also carries `X-Skales-Connector-Version` and
 
 A client that names itself, with a `client_version` parameter or an
 `X-Skales-Client-Version` header, gets a verdict on itself in `client`;
-without one, `outdated` stays `null`, because unknown is not outdated.
+without one, `outdated` stays `null`, because unknown is not outdated. The
+desktop sends a bare number and is judged against `requires_desktop`; the
+phone sends `mobile-2.9.26` and is judged against `requires_mobile`, because
+the two count differently. A `client_platform` parameter or an
+`X-Skales-Client-Platform` header may name the platform outright.
 
 ## REST endpoints
 
@@ -216,7 +222,7 @@ writes `dist/skales-connector.zip`.
 
 - WordPress 5.6 or later
 - PHP 7.4 or later
-- Skales desktop app, v12.7.2 or newer for the full endpoint set
+- Skales Desktop 12.7.2 or newer, or Skales Mobile 2.7.3 or newer, for the full endpoint set
 
 ## License
 
